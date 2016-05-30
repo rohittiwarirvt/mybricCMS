@@ -1,0 +1,7 @@
+name = Deluxe Core Visibility
+package = Deluxe
+description = Visibility access for blocks configuration.
+version = "7.x-1.0"
+core = "7.x"
+project = "dc_visibility"
+dependencies[] = deluxe_core

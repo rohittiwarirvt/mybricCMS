@@ -1,0 +1,7 @@
+name = DFS User
+description = User Login and Registration implementation.
+package = DFS
+core = 7.x
+
+
+

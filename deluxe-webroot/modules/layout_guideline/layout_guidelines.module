@@ -1,0 +1,504 @@
+<?php
+
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ *
+ * Let the system know we implement plugins.
+ */
+function layout_guidelines_ctools_plugin_directory($module, $plugin) {
+  return 'plugins/' . $plugin;
+}
+
+
+/*Implement hook_menu*/
+
+function layout_guidelines_menu(){
+  $items = array();
+  $items['layout-templates/%'] = array(
+    'description' => 'Try our free, easy-to-use, downloadable layout guidelines at'. $_SESSION['community'],
+    'page callback' => 'layout_guidelines_search_results',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['layout-templates/direct-mail/%'] = array(
+    'description' => 'Try our free, easy-to-use, downloadable layout guidelines at'. $_SESSION['community'],
+    'page callback' => 'layout_guidelines_search_results',
+    'page arguments' => array(1),
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/* implement hook_theme*/
+
+function layout_guidelines_theme() {
+  $module_path = drupal_get_path('module', 'layout_guidelines');
+  $base = array(
+    'path' => "$module_path/templates",
+  );
+  return array(
+    'layout_templates_search' => $base + array(
+      'template' => 'layout-templates-search',
+      'variables' => array('templates_data' => NULL),
+    ),
+  );
+}
+
+/* return image relative path*/
+
+function _layout_guideline_image_path($image_field) {
+  $url = file_create_url($image_field);
+  $url = parse_url($url);
+  $image_path = $url['path'];
+  return $image_path;
+}
+
+function layout_guidelines_search_results($direct_mail_arg){
+  $result_filter_array = array();
+  $arg = arg();
+  $direct_mail = 0;
+  $group_by = NULL;
+  if(!empty($direct_mail_arg) && $direct_mail_arg == 'direct-mail') {
+    $direct_mail = 1;
+  }
+
+  $arg_product_name = $arg[1 + $direct_mail] . '/';
+  $type_arg = !empty($arg[2 + $direct_mail]) ? $arg[2 + $direct_mail] : '~pdf';
+  $result_term = get_filter_path_by_tid('', $arg_product_name);
+  if (empty($result_term)) {
+    drupal_not_found();
+    drupal_exit();
+    }
+  $term = taxonomy_term_load($result_term['entity_id']);
+  if(!empty($term->field_group_by['und'])) {
+    foreach ($term->field_group_by['und'] as $key => $value) {
+      $group_by[] = $value['value'];
+    }
+  }
+  $filters = generate_filter_option();
+  $filter_args = explode('~', trim($type_arg, '~'));
+  $bundle = array();
+  $query_filter = new EntityFieldQuery();
+  $query_filter->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', 'layout_guideline')
+        ->propertyCondition('status', NODE_PUBLISHED);
+  $filtype = get_filter_path_by_tid('', $filter_args[0]);
+  $template_count = _layout_guidlines_template_count($filtype, $result_term);
+  $node_array = array('count' => $template_count);
+  if (count($filter_args) < 2 && $template_count > 9 && isset($group_by)) {
+    $query_filter->fieldCondition('field_'. $filtype["bundle"], 'tid', $filtype['entity_id'], '=');
+    $query_filter->fieldCondition('field_select_product_category', 'tid', $result_term['entity_id']);
+    $i = 0;
+    $node_array['groupby'] = $group_by;
+    foreach ($group_by as $value) {
+      $field_info = field_info_field_by_id($value);
+      $group_byfield = &drupal_static('groupby');
+      $group_byfield = $field_info['field_name'];
+      $query_filter->addTag('groupby');
+      $filter_result  =  $query_filter->execute();
+      if (isset($filter_result['node'])) {
+        $layout_node_nids = array_keys($filter_result['node']);
+        $nodes = entity_load('node', $layout_node_nids);
+        foreach ($nodes as  $node) {
+          $node_array['result'][$group_byfield][] = $node;
+       }
+     }
+     $i++;
+    }
+
+  }
+  else{
+      for ($i=0; $i < count($filter_args); $i++) {
+        if(!empty($filter_args[$i])) {
+          $bundle = get_filter_path_by_tid('', $filter_args[$i]);
+          $conds['field_'. $bundle["bundle"]][] = $bundle['entity_id'];
+        }
+      }
+
+
+      foreach ($conds as $cond_key => $cond_val) {
+        $query_filter->fieldCondition($cond_key, 'tid', $cond_val[0], '=');
+      }
+
+      $query_filter->fieldCondition('field_select_product_category', 'tid', $result_term['entity_id']);
+      if($direct_mail) {
+        $query_filter->fieldCondition('field_mailing','tid', 156, '!=');
+      }
+
+      $filter_result  =  $query_filter->execute();
+
+      $filter_result_count = $query_filter->count()->execute();
+      /*generate filter result node*/
+      if (isset($filter_result['node'])) {
+        $layout_node_nids = array_keys($filter_result['node']);
+        $nodes = entity_load('node', $layout_node_nids);
+        $node_array = array('count' => $template_count);
+        foreach ($nodes as  $node) {
+          $node_array['result'][] = $node;
+        }
+      }
+
+  }
+
+  /* Generate filter options*/
+  foreach ($filters as $filter_key => $filter) {
+    $vocabulary = taxonomy_vocabulary_machine_name_load($filter['vocab_lable']);
+    $terms = taxonomy_get_tree($vocabulary->vid);
+
+    foreach ($terms as $term) {
+
+      $query = new EntityFieldQuery();
+      $query->entityCondition('entity_type', 'node');
+      $query->entityCondition('bundle', 'layout_guideline');
+      $query->propertyCondition('status', NODE_PUBLISHED);
+      if($direct_mail) {
+        $query->fieldCondition($filter_key,'tid', 156, '!=');
+      }
+      $query->fieldCondition($filter_key, 'tid', $term->tid, '=');
+      $query->fieldCondition('field_select_product_category', 'tid',  $result_term['entity_id']);
+     $result  = $query->execute();
+
+     $count   =  $query->count()->execute();
+
+     $urlpath = get_filter_path_by_tid($term->tid, '');
+     $default_attribute =  is_attribute_selected_by_tid($term->tid);
+     if ($count) {
+       $reult_filter_array[$filter_key][$filter['filter_lable']][] = array(
+          'name' => $term->name,
+          'path' => $urlpath['field_layout_guideline_url_value'],
+          'is_default' => !empty($default_attribute['field_default_attribute_value']) ? $default_attribute['field_default_attribute_value'] : "",
+        );
+      }
+    }
+  }
+  $node_array['filter'] = $reult_filter_array;
+  _layout_guideline_image_metadata_gen($node_array, $direct_mail, $group_by);
+   $template_count = &drupal_static('template_count');
+   $template_count = $node_array['count'];
+  return theme('layout_templates_search', array('templates_data' => $node_array , 'filter_group' => $filters, 'is_direct_mail' => $direct_mail));
+}
+
+function get_terminfo_by_field($fields){
+
+  $query = db_select('taxonomy_term_data', 'td');
+  $query->fields('td', array('name', 'tid', 'vid'));
+  $query->condition('name', $name, '=');
+  $result = $query->execute()->fetchAssoc();
+  return $result;
+}
+
+/* return filter path */
+function get_filter_name_by_tid($tid=""){
+  $query = db_select('taxonomy_term_data', 't');
+  $query->fields('t', array('name', 'vid'));
+  $query->condition('t.tid', $tid, '=');
+  $result = $query->execute()->fetchAssoc();
+  return $result ;
+}
+
+function get_filter_path_by_tid($tid="", $arg=""){
+
+  $query = db_select('field_data_field_layout_guideline_url', 'u');
+  if ($arg) {
+    $query->fields('u', array('entity_id', 'bundle'));
+    $query->condition('field_layout_guideline_url_value', $arg, '=');
+  }elseif ($tid) {
+    $query->fields('u', array('field_layout_guideline_url_value'));
+    $query->condition('entity_id', $tid, '=');
+  }
+  $query->condition('entity_type', 'taxonomy_term', '=');
+  $result = $query->execute()->fetchAssoc();
+  return $result ;
+}
+function is_attribute_selected_by_tid($tid=""){
+  $query = db_select('field_data_field_default_attribute', 'u');
+  if($tid) {
+    $query->fields('u', array('field_default_attribute_value'));
+    $query->condition('entity_id', $tid, '=');
+  }
+  $query->condition('entity_type', 'taxonomy_term', '=');
+  $result = $query->execute()->fetchAssoc();
+  return $result ;
+}
+function generate_filter_option(){
+  $filters['field_file_extension']['vocab_lable'] = 'file_extension';
+  $filters['field_file_extension']['filter_lable'] = t('File Type');
+
+  $filters['field_template_size']['vocab_lable'] = 'template_size';
+  $filters['field_template_size']['filter_lable'] = t('Size');
+
+  $filters['field_mailing']['vocab_lable'] = 'mailing';
+  $filters['field_mailing']['filter_lable'] = t('Mailing');
+
+  $filters['field_select_folding_option']['vocab_lable'] = 'select_folding_option';
+  $filters['field_select_folding_option']['filter_lable'] = t('Folding Option');
+
+  $filters['field_binding']['vocab_lable'] = 'binding';
+  $filters['field_binding']['filter_lable'] = t('Binding');
+
+  $filters['field_select_front_panel_booklet']['vocab_lable'] = 'select_front_panel_booklet';
+  $filters['field_select_front_panel_booklet']['filter_lable'] = t('Front Panel/Booklet');
+
+  $filters['field_business_card_slot']['vocab_lable'] = 'business_card_slot';
+  $filters['field_business_card_slot']['filter_lable'] = t('Business card slot');
+
+  $filters['field_pages']['vocab_lable'] = 'pages';
+  $filters['field_pages']['filter_lable'] = t('Pages');
+
+  $filters['field_spine_width']['vocab_lable'] = 'spine_width';
+  $filters['field_spine_width']['filter_lable'] = t('Spine Width');
+
+  $filters['field_holiday_options']['vocab_lable'] = 'holiday_options';
+  $filters['field_holiday_options']['filter_lable'] = t('Holiday Options');
+
+  $filters['field_style']['vocab_lable'] = 'style';
+  $filters['field_style']['filter_lable'] = t('Style');
+
+
+  $filters['field_shape']['vocab_lable'] = 'shape';
+  $filters['field_shape']['filter_lable'] = t('Shape');
+
+  $filters['field_orientation']['vocab_lable'] = 'orientation';
+  $filters['field_orientation']['filter_lable'] = t('Orientation');
+
+  $filters['field_month_options']['vocab_lable'] = 'month_options';
+  $filters['field_month_options']['filter_lable'] = t('Months');
+
+  $filters['field_year']['vocab_lable'] = 'year';
+  $filters['field_year']['filter_lable'] = t('Year');
+
+  return $filters;
+}
+
+
+
+function layout_guidelines_preprocess_html(&$vars) {
+  if(arg(1) != 'direct-mail') {
+    if (arg(0) == 'layout-templates' && arg(1) !="") {
+      $vars['classes_array'][] = 'guidelines-search-page';
+    }
+  }
+  elseif (arg(1) == 'direct-mail' && arg(2) !="") {
+      $vars['classes_array'][] = 'guidelines-search-page';
+    }
+  else {
+  }
+}
+
+function _layout_guidelines_filter_path_url($total_pos, $pos, $alias_to_insert, $haystackurlarray, $default_options){
+  $url = NULL;
+  if(!in_array($alias_to_insert, $haystackurlarray)) {
+   for ($int=0; $int <=$total_pos; $int++) {
+     if($pos==$int){
+       $url .= '~' . $alias_to_insert;
+     }
+     else if(isset($default_options[$int]) && ((isset($haystackurlarray[$int])  && $default_options[$int] == $haystackurlarray[$int]) || empty($haystackurlarray[$int])) ){
+              $url .= '~' . $default_options[$int];
+     }
+     else if(isset($haystackurlarray[$int])){
+      $url .= '~' .  $haystackurlarray[$int];
+     }
+     else {
+      $url .= '~';
+     }
+    }
+  }
+  else{
+      $url = '~' . implode('~', $haystackurlarray);
+  }
+  return rtrim($url, '~') . '/';
+}
+
+function layout_guidelines_query_groupby_alter(QueryAlterableInterface $query) {
+  $group_byfield = &drupal_static('groupby');
+  if(db_table_exists('field_data_' . $group_byfield)) {
+    $query->innerjoin('field_data_' . $group_byfield , 'groupby', 'node.nid = groupby.entity_id');
+    $query->groupBy('groupby.' . $group_byfield .'_tid');
+  }
+
+
+}
+
+function _layout_guidlines_template_count($filetype, $product_categoy) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+        ->entityCondition('bundle', 'layout_guideline')
+        ->propertyCondition('status', NODE_PUBLISHED);
+  $query->fieldCondition('field_'. $filetype["bundle"], 'tid', $filetype['entity_id'], '=');
+    $query->fieldCondition('field_select_product_category', 'tid', $product_categoy['entity_id']);
+   $result = $query->count()->execute();
+   return $result;
+
+}
+
+
+
+function _layout_guideline_group_by_select_list_field() {
+
+  $content_type =  'layout_guideline';
+  $instances = field_info_instances('node', $content_type);
+  $options = array('_none' => t('-None-'));
+  foreach ($instances as $key => $value) {
+    $options[$value['field_id']] = $value['label'] ;
+  }
+  return $options;
+}
+
+
+function template_preprocess_layout_templates_search(&$var) {
+  $var['default_options'] = array();
+  $lg_page_type = ' Layout Guidelines';
+  $var['current_url'] = '/'. arg(0) .'/'. arg(1) . '/';
+  if($var['is_direct_mail']) {
+    $var['current_url'] = '/'. arg(0) .'/'. arg(1) . '/' . arg(2) . '/';
+    $lg_page_type = " Mailing Layout Guidelines";
+  }
+
+  $label = array();
+  $var['arg'] =  explode('~', arg(2 + $var['is_direct_mail']));
+  $var['product_attributes'] = array_slice(explode('~', current_path()),1);
+  $var['filetype'] = array(!empty($var['product_attributes']) ? $var['product_attributes'][0] : 'pdf' );
+  $var['filter_count'] = count($var['templates_data']['filter']);
+  $var['result_count'] = $var['templates_data']['count'];
+  $file = !empty($arg[1 + $var['is_direct_mail']]) ? ' - ' . strtoupper($arg[1 + $var['is_direct_mail']]) : ' - PDF';
+  $i =0;
+  foreach ($var['templates_data']['filter'] as $filter_group) {
+    $i++;
+    // hide the left nav if more then 15
+
+    if (count(current($filter_group)) > 15) {
+      $var['filter_hide'][] = array(key($filter_group));
+    }
+    foreach (array_keys($filter_group) as $filter_label) {
+      foreach ($filter_group[$filter_label] as  $value) {
+        if ( isset($var['arg'][$i]) && !strcmp($var['arg'][$i], $value['path'])) {
+          $label[] = $value['name'];
+        }
+        if($value['is_default']) {
+          $var['default_options'][$i-1] = $value['path'];
+        }
+      }
+    }
+  }
+  if(count($label) <= 1)
+    $var['label'] = 'All '. $lg_page_type .' Templates - ' . strtoupper($var['filetype'][0]);
+  else
+    $var['label'] = implode(' ', array_slice($label, 1)) .  $lg_page_type . ' Templates - ' . $label[0] ;
+}
+/**
+ *Implements hook_block_info().
+ */
+function layout_guidelines_block_info(){
+  $blocks = array();
+  $blocks['layout_guideline_seo']= array(
+   'info' => t('Layout Guideline SEO'),
+   );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function layout_guidelines_block_view($delta='') {
+  $block = array();
+  switch($delta) {
+    case 'layout_guideline_seo':
+    $content = _seo_data_display_generate_tags(array('SeoCopyBlock'));
+    $block['content'] = $content['SeoCopyBlock'];
+    if($block['content'] == 'n/a' || $block['content'] == NULL)
+      {
+        return false;
+      }
+    break;
+  }
+  return $block;
+}
+
+
+function layout_guidelines_views_pre_render(&$view) {
+    $tanent_info = &drupal_static('tanent_info');
+  $lg_page_type = ' Layout Guidelines Templates';
+  if(arg(1) == 'direct-mail') {
+    $lg_page_type = " Mailing Layout Guidelines Templates";
+  }
+  switch ($view->name) {
+    case 'products_promotion':
+    $meta_data_img = $tanent_info['community'] .' '. $view->result[0]->node_title . $lg_page_type;
+    $view->result[0]->field_field_promotion_banner_image[0]['rendered']['#item']['alt']= $meta_data_img;
+    $view->result[0]->field_field_promotion_banner_image[0]['rendered']['#item']['title'] = $meta_data_img ;
+      break;
+
+    default:
+      # code...
+      break;
+  }
+
+}
+
+/**
+ * Utility function returning current entities alt text value
+ * @param  [type] $entity_type [description]
+ * @param  [type] $bundle      [description]
+ * @param  [type] $entity      [description]
+ * @return [type]              [description]
+ */
+function _layout_guideline_image_metadata_gen(&$bundles , $direct_mail, $group_by) {
+  if(isset($bundles['groupby'])){
+    foreach ($bundles['result'] as $filter_key => $filter) {
+      $filter_map[] = 'field_file_extension';
+      $filter_map[] = $filter_key;
+      $filter_map = array_flip($filter_map);
+      foreach ($filter as $key => $node) {
+       _layout_guideline_image_metadata($bundles['result'][$filter_key][$key], $filter_map, $direct_mail);
+
+      }
+      unset($filter_map);
+    }
+  }
+  else {
+    foreach ($bundles['result'] as $key => $nodes) {
+     _layout_guideline_image_metadata($bundles['result'][$key], $bundles['filter'], $direct_mail);
+    }
+  }
+}
+
+function _layout_guideline_array_unshift_assoc(&$arr, $key, $val){
+    $arr = array_reverse($arr, true);
+    $arr[$key] = $val;
+    $arr = array_reverse($arr, true);
+}
+
+function _layout_guideline_image_metadata(&$node, $bundles_filter, $direct_mail) {
+  $lg_page_type = " Print Layout Templates";
+  if($direct_mail) {
+    $lg_page_type = " Mailing Print Layout Templates";
+  }
+  $node_array =(array)$node;
+  $contextual_attributes = array_intersect_key($node_array, $bundles_filter);
+
+  $file_type = 'field_file_extension' ;
+  $replace_filetype = $contextual_attributes[$file_type];
+  unset($contextual_attributes[$file_type]);
+  _layout_guideline_array_unshift_assoc($contextual_attributes, $file_type, $replace_filetype);
+  if (is_array($bundles_filter)) {
+    $bundles_filter_flipped = array_flip( array_keys($bundles_filter) );
+    $sorter_contextual_attributes = array_merge($bundles_filter_flipped, $contextual_attributes);
+  }
+  else {
+    $sorter_contextual_attributes = $contextual_attributes;
+  }
+  $product_name = get_filter_name_by_tid($node_array['field_select_product_category']['und'][0]['tid']);
+  $alt_text = "";
+  foreach ($sorter_contextual_attributes as $value) {
+
+    if(is_array($value)) {
+      $term_name = get_filter_name_by_tid(isset($value['und']) ? $value['und'][0]['tid'] : "");
+      $alt_text[] = $term_name['name'];
+    }
+  }
+  $node ->dynamic_alt = implode(' ', $alt_text) .' '.  $product_name['name'] . $lg_page_type;
+}

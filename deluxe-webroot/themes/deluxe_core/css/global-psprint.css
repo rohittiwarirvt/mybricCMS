@@ -1,0 +1,157 @@
+
+
+/**
+* ============================== Promotion css ==============================
+*/
+.view-products-promotion {
+  position: relative;
+
+}
+
+.view-products-promotion  .views-field-php {
+  padding: 2px 4px 4px 4px;
+  background: #EB278D;
+  height: 27px;
+  position: absolute;
+  top: 16px;
+  left: 4px;
+
+}
+.view-products-promotion  .views-field-php .deals-center {
+  font-size: 16px;
+}
+.view-products-promotion  .views-field-php .deals-right {
+  font-size: 12px;
+  margin-left: 5px;
+  margin-right: 6px;
+  position: relative;
+  top: -1px;
+}
+.view-products-promotion  .views-field-php .field-content:before,
+.views-field-php .field-content:after {
+  content: ' ';
+  display: block;
+  width: 21px;
+  height: 40px;
+  position: absolute;
+  top: 0;
+  background-repeat: no-repeat;
+}
+
+.view-products-promotion  .views-field-php .field-content:before {
+  left: -9px;
+  background-image: url("../images/sprite.png");
+  background-repeat: no-repeat;
+  background-position: -81px -80px;
+  width: 10px;
+}
+
+.view-products-promotion  .views-field-php .field-content:after {
+  right: -10px;
+  background-image: url("../images/sprite.png");
+  background-repeat: no-repeat;
+  background-position: -100px -80px;
+  width: 10px;
+}
+
+.view-products-promotion  .views-field-php .field-content {
+  color: #fff;
+}
+
+.isloading-wrapper-drupal {
+    height: 100%;
+    left: 0;
+    display: none;
+    position: fixed;
+    top: 0;
+    width: 100%;
+    z-index: 2000;
+    background-image: url("/sites/default/files/images/loading_animation.gif");
+    background-color: rgba(255,255,255,0.5);
+    text-align: center;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+
+.throbber-signup {
+    height: 90px;
+    left: 10em;
+     display: none;
+    position: absolute;
+    top: 5em;
+    width: 90px;
+    z-index: 2000;
+    background-image: url("/sites/default/files/images/loading_animation.gif");
+    background-repeat: no-repeat;
+    background-position: center;
+
+}
+.video-img {
+    position: relative;
+        margin-left: 10px;
+}
+.video-img a {
+    position: absolute;
+    left: 22.7%;
+    top: 49%;
+    width: 55.7%;
+    height: 19%;
+    display: block;
+}
+.guidelines-search-page .view-products-promotion {
+  overflow: hidden;
+  }
+.guidelines-search-page .view-products-promotion .views-row > div {
+  float: left;
+}
+
+.dfs-error {
+  display: none;
+}
+
+
+.html .social-widget {
+  clear: both;
+}
+
+.html .subscription-block {
+    overflow: visible;
+    float: left;
+}
+.dfs-error span,
+.service-error-message {
+  color: #f00;
+  font-size: 12px;
+  position: relative;
+  top: 3px;
+}
+
+.lg-top-banner-wrapper {
+  background: #f5f5f5;
+  padding-bottom: 23px;
+  border-bottom: 1px solid #e3e3e3;
+      overflow: hidden;
+}
+.lg-top-banner, .lg-bottom-text{
+    max-width: 1024px;
+    margin: auto;
+}
+.banner-image {
+    float: left;
+}
+.video-parent {
+    float: left;
+    margin-left: 10px;
+}
+
+
+.html .ajax-progress-throbber {
+  display: none;
+}
+.html .subscribe-section {
+    width: 330px;
+}
+
+.page-layout-templates-roll-stickers-printing .field_orientation  {
+  display:none;
+}

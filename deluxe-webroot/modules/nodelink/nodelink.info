@@ -1,0 +1,7 @@
+name = Add Node link
+package = Custom
+description = Add prev & next link
+version = "7.x-1.0"
+core = "7.x"
+project = "nodelink"
+

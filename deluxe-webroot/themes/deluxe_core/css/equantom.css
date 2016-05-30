@@ -1,0 +1,14 @@
+
+.view.view-equantom-category.view-id-equantom_category{
+    border-bottom: 1px solid #e4e4e4;
+    margin-top: 28px;
+    overflow: hidden;
+    padding-bottom: 18px;
+}
+
+.view-id-equantom_category .views-row{
+    float: left;
+    margin-bottom: 26px;
+    margin-right: 20px;
+    width: 27%;
+}

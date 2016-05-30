@@ -1,0 +1,105 @@
+<?php
+
+  module_load_include('inc', 'deluxe_tracker', 'deluxe_tracker_ga.page');
+  module_load_include('inc', 'deluxe_tracker', 'deluxe_tracker_meta.page');
+  module_load_include('inc', 'deluxe_tracker', 'deluxe_tracker_omniture.page');
+  module_load_include('inc', 'deluxe_tracker', 'deluxe_tracker_pixel.page');
+
+
+function deluxe_tracker_preprocess_html(&$vars) {
+  $tanent_info = &drupal_static('tanent_info');
+  global $user;
+  $get_environment = TRUE;
+  $arg = arg();
+  $site_name = _deluxe_core_get_domain();
+  $community_info = _deluxe_core_community_code($site_name);
+
+  $subdomain = variable_get('subdomain');
+
+  switch ($tanent_info['community']) {
+    case 'PsPrint':
+   drupal_add_js(drupal_get_path('module', 'deluxe_tracker') . "/js/psprint_s_code_$subdomain.js");
+    _deluxe_tracker_omniture_vars($vars);
+    _deluxe_tracker_pixel_vars($vars);
+  case 'DFSFullColor':
+  case 'Safeguard':
+    $vars['site_env_path'] = '/' . drupal_get_path('theme', 'deluxe_core') . "/js/$subdomain/site_env.js";
+  _deluxe_tracker_ga_vars($vars);
+  _deluxe_tracker_meta_vars($vars);
+    drupal_add_js(drupal_get_path('module', 'dfs_user') . '/js/cart-service.js');
+      break;
+    default:
+       # code...
+       break;
+   }
+}
+
+
+function _deluxe_tracker_get_loggedin_userdetails() {
+  global $user;
+  if ($user->uid!=0) {
+    $user = user_load($user->uid);
+    $user_data['userid'] = !empty($user->field_userid['und']) ? $user->field_userid['und'][0]['value'] : NULL;
+    $user_data['username'] = !empty($user->field_user_first_name['und']) ? $user->field_user_first_name['und'][0]['value']: NULL;
+      return $user_data;
+  }
+}
+
+
+/**
+ * implements hook_menu
+ */
+
+function deluxe_tracker_menu() {
+
+
+  $items ['resources/sitemap_index.xml'] = array(
+    'description' => 'Resources Sitemap.xml page',
+    'page callback' => '_deluxe_tracker_xmlsitemap_output',
+    'access callback' => TRUE,
+    'file' => 'xmlsitemap.pages.inc',
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+function deluxe_tracker_theme() {
+  $module_path = drupal_get_path('module', 'deluxe_tracker');
+  $base = array(
+    'path' => "$module_path/templates",
+  );
+  return array(
+    'deluxe_tracker_xmlsitemap_page' => $base + array(
+      'template' => 'deluxe-tracker-resources-xmlsitemap-output',
+      'variables' => array('var' => NULL),
+    ),
+  );
+}
+
+
+function template_preprocess_deluxe_tracker_xmlsitemap_page(&$variables) {
+  $variables['xmlencoding'] = '<?xml version="1.0" encoding="UTF-8"?>';
+  $variables['xmlnamespacestarttag'] = '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">';
+
+  $records = _deluxe_tracker_resourcesurls_for_xml();
+  foreach ($records as $value) {
+    $variables['xmlobjects'].= writeRecord($value);
+  }
+  $variables['xmlnamespaceendtag'] ="</urlset>";
+}
+
+function deluxe_tracker_cron(){
+
+  // code for xml site map
+  $timestamp = variable_get('sitemap_cron_last_run', REQUEST_TIME);
+  $datetime1 =  new DateTime(date("Y-m-d H:i:s", $timestamp));
+  $datetime2 = new DateTime();
+  $interval = $datetime1->diff($datetime2);
+  $half_month = $interval->format('%a');
+  if ($half_month > 14) {
+    variable_set('xmlsitemaptime', $datetime2->format('Y-m-d'));
+    variable_set('sitemap_cron_last_run', REQUEST_TIME);
+    watchdog('xmlsitemap_time', 'xmlsitemap time interval updated');
+  }
+}
+

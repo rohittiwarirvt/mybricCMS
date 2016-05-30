@@ -1,0 +1,13 @@
+diff --git a/field_collection_tabs.js b/field_collection_tabs.js
+index 0de4f7d..29f2240 100644
+--- a/field_collection_tabs.js
++++ b/field_collection_tabs.js
+@@ -15,7 +15,7 @@ Drupal.behaviors.fieldCollectionTabs = {
+   attach: function (context) {
+ 
+     $('.field-collection-tabs', context)
+-      .once('.tabs-processed')
++      .once('tabs')
+       .tabs();
+   }
+ };

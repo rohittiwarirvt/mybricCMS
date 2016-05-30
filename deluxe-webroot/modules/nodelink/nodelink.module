@@ -1,0 +1,170 @@
+<?php
+/**
+ * [nodelink_preprocess_page description]
+ * To add Previous & Next link for nodes
+ */
+function nodelink_preprocess_page(&$variables) {
+  if (!empty($variables['node']) && $variables['node']->type == 'resources') {
+    $current_id = $variables['node']->nid;
+    $terms = $variables['node']->field_resources_category['und'];
+    _nodelink_strip_stdclass_array($terms);
+
+    /* Select Query for Previous node*/
+    $previous_query = new EntityFieldQuery();
+    $previous_query->entityCondition('entity_type', 'node')
+      ->propertyCondition('type', 'resources')
+      ->propertyCondition('status', NODE_PUBLISHED)
+      ->fieldCondition('field_resources_category', 'tid', $terms,'IN')
+      ->propertyCondition('nid', $current_id, '<')
+      ->fieldOrderBy('field_resources_category', 'tid', 'DESC')
+      ->range(0, 1);
+    $previous_query = $previous_query->execute();
+    if(!empty($previous_query)) {
+      $previousresult = $previous_query['node'];
+      foreach ($previousresult as $key => $value) {
+      $previousnid = $value->nid;
+    }
+   // Previous node navigation link
+    $previousnid = node_load($previousnid);
+    $prev_nid = $previousnid->nid;
+    $prev_title = $previousnid->title;
+    $previous_url = drupal_get_path_alias('node/'.$prev_nid);
+    // To assign theme link for navigation
+    $variables['previous'] = l($prev_title,$previous_url,array(
+      'attributes' => array(
+      'class' => 'previous'
+      ),
+    ));
+  }
+    /* Select Query for Next node */
+    $next_query = new EntityFieldQuery();
+    $next_query->entityCondition('entity_type', 'node')
+      ->propertyCondition('type', 'resources')
+      ->propertyCondition('status', NODE_PUBLISHED)
+      ->fieldCondition('field_resources_category', 'tid', $terms,'IN')
+      ->propertyCondition('nid', $current_id, '>')
+      ->fieldOrderBy('field_resources_category', 'tid', 'DESC')
+      ->range(0, 1);
+    $next_query = $next_query->execute();
+    if(!empty($next_query)) {
+      $nextresult = $next_query['node'];
+      foreach ($nextresult as $key => $value) {
+        $nextnid = $value->nid;
+      }
+    /*Next node navigation link*/
+    $nextnid = node_load($nextnid);
+    $next_nid = $nextnid->nid;
+    $next_title = $nextnid->title;
+    $next_url = drupal_get_path_alias('node/'.$next_nid);
+     // To assign theme link for navigation
+    $variables['next'] = l($next_title,$next_url,array(
+      'attributes' => array(
+      'class' => 'next'
+       ),
+      ));
+    }
+  }
+
+}
+
+
+/**
+ * Implements hook_url_inbound_alter().
+ */
+function nodelink_url_inbound_alter(&$path, &$original_path, $path_language) {
+    $path_alias = drupal_get_path_alias(current_path());
+    $arg = arg(NULL, $path_alias);
+    if($arg[0] == 'resources') {
+      $arg_count = count($arg) -1;
+      if ($arg_count > 0 && $arg[$arg_count - 1] == 'page' && is_numeric($arg[$arg_count])) {
+        // Set the 'page' value of GET method.
+        $_GET['page'] = $arg[$arg_count];
+        // Extract alias from arg().
+        $original_path_array = explode('page', $original_path);
+        $q_page_query = rtrim($original_path_array['0'], '/');
+        if (count($original_path_array) > 1) {
+          $parsed_path = drupal_get_normal_path($q_page_query);
+          if (strcmp($parsed_path, $q_page_query) === 0) {
+            $path = $parsed_path. '/';
+          }
+          else {
+             $path = $parsed_path;
+          }
+        }
+      }
+    }
+
+}
+
+/**
+ * Implements hook_url_outbound_alter().
+ *
+ * Change pagination query type URL to a clean URL
+ */
+function nodelink_url_outbound_alter(&$path, &$options, $original_path) {
+
+    static $cond;
+    if(!isset($cond)) {
+      $path_alias = drupal_get_path_alias(current_path());
+      $args = arg(NULL, $path_alias);
+      $cond = $args[0];
+    }
+    if($cond == 'resources') {
+      $arg = explode('/', $path);
+      if (isset($options['query']['page'])) {
+        $page_query = explode(',', $options['query']['page']);
+        if (!empty($path) && !$options['alias']) {
+          $language = isset($options['language']) && isset($options['language']->language) ? $options['language']->language : NULL;
+            $alias = drupal_get_path_alias($original_path, $language);
+           if ($alias != $original_path) {
+            $path = $alias;
+            $options['alias'] = TRUE;
+          }
+          else {
+            $path_arg = arg();
+            $path_arg = array_slice($path_arg, 0, array_search('page', $path_arg));
+            $path = empty($path_arg) ? $original_path : implode('/', $path_arg);
+          }
+          $path = rtrim($path, "/") . "/";
+        }
+        $path_prefix = 'page';
+        if (isset($page_query[1]) && $page_query[1] != 0) {
+          $sub_page = $page_query[0];
+
+          $path .= "$path_prefix/$sub_page/";
+        }
+        else {
+          $sub_page = $page_query[0];
+          if ($sub_page) {
+            $path .= "$path_prefix/$sub_page/";
+          }
+        }
+        unset($options['query']['page']);
+      }
+
+      $path_unstripped_array = explode('/', ltrim($path,"/"));
+      if (is_array($path_unstripped_array)) {
+
+        $path = implode('/',$path_unstripped_array);
+      }
+    }
+
+}
+
+
+
+
+/**
+ * [_nodelink_stripStdclassInArray description]
+ * @param  [type] &$array [description]
+ * @return [type]         [description]
+ */
+function _nodelink_strip_stdclass_array(&$array) {
+  foreach ($array as $arrkey => $item) {
+    foreach ($item  as $key => $value) {
+      if(is_object($value)) {
+        unset($array[$arrkey][$key]);
+      }
+    }
+  }
+}

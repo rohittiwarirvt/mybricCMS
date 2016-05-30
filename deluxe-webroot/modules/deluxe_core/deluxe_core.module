@@ -1,0 +1,1111 @@
+<?php
+
+/**
+* Implement hook_init
+**/
+module_load_include('inc', 'deluxe_core', 'deluxe_core.page');
+
+function deluxe_core_init(){
+  global $user;
+
+  /*Assign community code*/
+  drupal_session_start();
+  $site_name = _deluxe_core_get_domain();
+  $community_info = _deluxe_core_community_code($site_name);
+
+  /*Check eQuantum */
+  if (arg(0) =='equantum'){ return FALSE; }
+
+  /* define commnunity value in session */
+  $_SESSION['community']      = $community_info->field_community_code['und'][0]['value'];
+  $_SESSION['community_id']   = $community_info->field_community_id['und'][0]['value'];
+  $_SESSION['community_nid']  = $community_info->nid;
+
+  $tanent_info = &drupal_static('tanent_info');
+  $tanent_info['community_nid']   = !empty($community_info->nid) ? $community_info->nid : NULL;
+  $tanent_info['community']       = !empty($community_info->field_community_code['und']) ? $community_info->field_community_code['und'][0]['value'] : NULL;
+  $tanent_info['community_id']    = !empty($community_info->field_community_id['und']) ? $community_info->field_community_id['und'][0]['value'] : NULL;
+  $tanent_info['tenant_phone']    = !empty($community_info->field_dealer_phone['und']) ? $community_info->field_dealer_phone['und'][0]['value'] : NULL;
+  $tanent_info['tenant_mail']     = !empty($community_info->field_community_mail['und']) ? $community_info->field_community_mail['und'][0]['value'] : NULL;
+  $tanent_info['tenant_name']     = !empty($community_info->field_tenant_name['und']) ? $community_info->field_tenant_name['und'][0]['value'] : NULL;
+  $tanent_info['tenant_domain']   = !empty($community_info->field_tenant_domain['und']) ? $community_info->field_tenant_domain['und'][0]['value'] : NULL;
+  $tanent_info['community_logo']  = !empty($community_info->field_community_logo['und']) ? $community_info->field_community_logo['und']['0']['uri'] : NULL;
+  $tanent_info['tenant_accronym'] = !empty($community_info->field_tenant_accronym['und']) ? $community_info->field_tenant_accronym['und'][0]['value'] : NULL;
+  $tanent_info['tenant_prefix_metadata'] = !empty($community_info->field_tenant_prefix_metadata['und']) ? $community_info->field_tenant_prefix_metadata['und'][0]['value'] : NULL;
+
+  if (!empty($community_info->field_tenant_creative_email)){
+    $tanent_info['tenant_creative_email'] = $community_info->field_tenant_creative_email['und'][0]['value'];
+  }
+  if (!empty($community_info->field_tenant_support_email)){
+    $tanent_info['tenant_support_email'] = $community_info->field_tenant_support_email['und'][0]['value'];
+  }
+
+  drupal_add_css(drupal_get_path('module', 'deluxe_core') . '/css/deluxe_core.css', array('group' => CSS_DEFAULT, 'every_page' => TRUE));
+  $settings = array('tenant' => array(
+                'community' => $_SESSION['community'],
+                'community_id' => $_SESSION['community_id'],
+                'cart_count_api' => variable_get('cart_count_' . $_SESSION['community']),
+                'subscription' => variable_get('signup_subscription_' . $_SESSION['community']),
+                'environment' =>variable_get('subdomain'),
+                'sitename' => $site_name,
+                  )
+              );
+  drupal_add_js($settings, 'setting');
+
+  /*check user is logged in as  administrator */
+  if ($user->uid != 1) {
+   _dfs_session_maintain();
+  }
+
+  _deluxe_core_redirect($tanent_info);
+}
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ *
+ * Let the system know we implement plugins.
+ */
+function deluxe_core_ctools_plugin_directory($module, $plugin) {
+    if (!empty($plugin)) {
+    return "plugins/$plugin";
+  }
+}
+
+
+/**
+ * Implements hook_menu().
+ */
+
+function deluxe_core_menu() {
+  $items['stores/autocomplete/'] = array(
+      'title' => 'Autocomplete stores',
+      'page callback' => 'community_store_autocomplete',
+      'access arguments' => array('access content'),
+      'type' => MENU_CALLBACK,
+      'file' => 'product_tools.pages.inc',
+    );
+  $items['community/autocomplete/'] = array(
+      'title' => 'Autocomplete community',
+      'page callback' => 'community_autocomplete',
+      'access arguments' => array('access content'),
+      'type' => MENU_CALLBACK,
+      'file' => 'product_tools.pages.inc',
+    );
+
+  $items['admin/config/tenant/profiles'] = array(
+    'title' => 'Tenant Profile Configuration',
+    'description' => 'Tenants specific variable settings.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('tenant_profile_settings_form'),
+    'access arguments' => array('administer tenant'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 2,
+    'file' => 'deluxe_core.page.inc',
+  );
+
+ $items['node/%ctools_js/video'] = array(
+      'title' => 'AJAX modal dialog',
+      'page callback' => 'delux_core_modal_popup',
+      'page arguments' => array(1,2),
+      'access callback' => TRUE,
+      'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+function delux_core_modal_popup($js = NULL, $video) {
+     if(!$js) {
+        return "no js";
+     }
+     ctools_include('modal');
+     ctools_include('ajax');
+     $video = '<div id = "iframe-welcome-video"><iframe src="https://www.brainshark.com/deluxecorp/vu?pi=zG0zmP0bPz8CY9z0&dm=5&pause=1&nrs=1" frameborder="0" width="440" height="366" scrolling="no" style="border:1px solid #999999"></iframe></div>';
+     $contents = render($video);
+
+     return ctools_modal_render('', $contents) ;
+}
+
+/*Implement hook_form_alter*/
+
+function deluxe_core_form_alter(&$form, &$form_state, $form_id) {
+
+  /* Page Layout option for Admin radio button */
+  if($form_id == 'page_node_form') {
+    $module_path = drupal_get_path('module', deluxe_core);
+    drupal_add_css($module_path.'/css/deluxe_core.css');
+
+     /* call validate hook */
+     $form['#validate'][]  = 'deluxe_core_form_validate';
+  }
+  /* End */
+
+    $step = isset($form_state['storage']['step']) ? $form_state['storage']['step'] : 1;
+  $custom_any_menu_path = variable_get('custom_any_menu_path');
+  switch ($form_id) {
+    case 'menu_import_form':
+          if( $step == 1 )
+          {
+            $form['options']['custom_any_menu_path'] = array(
+              '#type' => 'checkbox',
+              '#title' => t('Remove Path validation'),
+              '#description' => t('Prevent menu import from assigning <front> for non existent menu path'),
+              '#default_value' => !empty($custom_any_menu_path) ? $custom_any_menu_path : 0,
+                '#weight' => -1,
+            );
+
+
+          }
+          else if ($step == 2){
+              variable_set('custom_any_menu_path', $form_state['values']['custom_any_menu_path']);
+          }
+      break;
+
+    default:
+      # code...
+      break;
+  }
+}
+
+function _deluxe_core_community_code($url){
+  $nodeinfo = NULL;
+  $sub_query = db_select('field_data_field_community_url', 'cu');
+  $sub_query->fields('cu', array('entity_id'));
+  $sub_query->condition('field_community_url_value',  '%'. db_like($url) . '%', 'LIKE');
+  $get_nid = $sub_query->execute()->fetchAssoc();
+  if(!empty($get_nid)) {
+    $nodeinfo = node_load($get_nid['entity_id']);
+  }
+  return $nodeinfo;
+}
+
+/* Implement hook__views_query_alter*/
+function deluxe_core_views_query_alter(&$view, &$query){
+   $tanent_info = &drupal_static('tanent_info');
+
+  switch ($view->current_display) {
+    case 'dfs_sfg_products_promotion':
+    case 'psp_products_promotion':
+      if($query->where[1]['conditions'][0]['field']=='node_field_data_field_tanent_name__field_data_field_community_id.field_community_id_value') {
+        $query->where[1]['conditions'][0]['value'] = $tanent_info['community_id'];
+      }
+       $query->where[0]['conditions'][0]['value'] = arg(1) . "/";
+      if(arg(1) == 'direct-mail') {
+         $query->where[0]['conditions'][0]['value'] = arg(2) . "/";
+      }
+      break;
+
+    case 'comet_content':
+    case 'category_products':
+    case 'home_slider':
+    case 'notification':
+       $query->where[1]['conditions'][0]['value'] = $tanent_info['community_id'];
+    case 'layout_guideline':
+    case 'mailing_layout_guidelines':
+    case 'all_products_llist':
+    case 'all_mailing_product':
+      if($query->where[1]['conditions'][0]['field']=='node_field_data_field_tanent_name__field_data_field_community_id.field_community_id_value') {
+        $query->where[1]['conditions'][0]['value'] = $tanent_info['community_id'];
+      }
+      break;
+    default:
+      # code...
+      break;
+  }
+}
+
+function _deluxe_core_get_nid_from_url() {
+  if (strpos(current_path(), 'node') !== false){
+    $node = menu_get_object("node", 1, current_path());
+    $nid  = $node->nid;
+    return $nid;
+  }
+}
+
+function _deluxe_core_generate_breadcrumb($node){
+  if (empty ($node->field_select_product_category['und'])){
+    return FALSE;
+  }
+  $is_review = isset($node->is_review) ? $node->is_review : FALSE;
+  $category_tid = $node->field_select_product_category['und'][0]['tid'];
+
+  $term =  taxonomy_term_load($category_tid);
+
+
+  if($is_review) {
+    $category = l('<span itemprop="name">' . $term->name . '</span>' , drupal_get_path_alias('taxonomy/term/' . $category_tid), array('html' => TRUE, ));
+    $node_alias =  drupal_get_path_alias('node/' . $node->nid);
+    $product = l('<span itemprop="name">' .$node->title . '</span>', $node_alias, array('html' => TRUE, ));
+  } else {
+    $category = l($term->name , drupal_get_path_alias('taxonomy/term/' . $category_tid));
+    $node_alias =  drupal_get_path_alias('node/' . $node->nid);
+    $product = l($node->title, $node_alias);
+  }
+
+
+
+
+  $breadcrumb = array();
+  $product_count = _deluxe_core_category_product_count($category_tid);
+  $to_print_category = (isset($product_count) && count($product_count) >1);
+
+  if($to_print_category && !$is_review) {
+    $breadcrumb[] = $category;
+    $breadcrumb[] = $product;
+  }
+  else if($is_review) {
+
+      $review = t('<span itemprop="name">Customer Review</span>');
+      $breadcrumb[] = l('<span itemprop="name">All Printing products</span>', "/producthub", array('html' => TRUE));
+      !empty($to_print_category) ? $breadcrumb[] = $category : NULL;
+      !($node->type == "rating_reviews") ? $breadcrumb[] = $product : NULL;
+      !empty($review) ? $breadcrumb[] = $review : NULL;
+
+      $breadcrumb = _deluxe_core_breadcrumb_render_seo($breadcrumb);
+
+  }
+  return $breadcrumb;
+}
+
+// breadcrumbs render for seo on reviews ratings page
+function _deluxe_core_breadcrumb_render_seo($breadcrumb) {
+  $breadcrumb_content = NULL;
+  foreach ($breadcrumb as $key => $value) {
+
+    $breadcrumb_meta =  array('#type' => 'html_tag',
+       '#tag' => 'meta',
+       '#attributes' => array('itemprop' => 'position',
+           'content' => $key +1)
+     );
+   $breadcrum_list =  array('#type' => 'html_tag',
+        '#tag' => 'span',
+        '#attributes' => array('itemprop' => 'itemListElement',
+          'itemtype' => 'http://schema.org/ListItem'),
+        '#value' => $value . drupal_render($breadcrumb_meta)
+        );
+    if($key != 0) {
+      $breadcrumb_content.= "<span> &gt; </span>". drupal_render($breadcrum_list);
+    } else {
+      $breadcrumb_content.=  drupal_render($breadcrum_list);
+    }
+
+   }
+      $breadcrumb_rendered = '<div class="breadcrumb" class="grid-12" itemscope itemtype="http://schema.org/BreadcrumbList">' . $breadcrumb_content.  '</div>';
+
+      return $breadcrumb_rendered;
+}
+
+/*Get category associated product count */
+function _deluxe_core_category_product_count($category_id = '') {
+  $result = false;
+  if(!empty($category_id)) {
+    $query = db_select('node', 'n');
+    $query->distinct();
+    $query->innerJoin('field_data_field_select_product_category', 'prod_cat', 'n.nid=prod_cat.entity_id');
+    $query->fields('n', array('nid'));
+    $query->condition('n.type', 'product');
+    $query->condition('prod_cat.field_select_product_category_tid', $category_id);
+    $result = $query->execute()->fetchAll();
+  }
+  return $result;
+}
+
+/*Get current tenant info*/
+function _deluxe_core_tenantinfo($itemids = NULL, $node = ""){
+   $tanent_info = &drupal_static('tanent_info');
+  $result = NULL;
+  if (isset($itemids)) {
+    foreach ($itemids as $key => $itemid) {
+      $tenant_query = db_select('field_data_field_tanent_name', 'tn');
+      $tenant_query->fields('tn', array('field_tanent_name_nid', 'entity_id'));
+      $tenant_query->condition('tn.entity_id', $itemid['value'], '=');
+      $tenant_result = $tenant_query->execute()->fetchAssoc();
+      if ( isset($tanent_info['community_nid']) && $tanent_info['community_nid'] == $tenant_result['field_tanent_name_nid']){
+        $tenant_id = $tenant_result['entity_id'];
+      }
+    }
+      if (isset($tenant_id)) {
+        $pageid_query = db_select('field_data_field_pageid', 'pi');
+        $pageid_query->fields('pi', array('field_pageid_value'));
+        $pageid_query->condition('pi.entity_id', $tenant_id, '=');
+        $pageid_result = $pageid_query->execute()->fetchAssoc();
+        $catalog_query = db_select('field_data_field_catalog_id', 'ci');
+        $catalog_query->fields('ci', array('field_catalog_id_value'));
+        $catalog_query->condition('ci.entity_id', $tenant_id, '=');
+        $catalog_result = $catalog_query->execute()->fetchAssoc();
+        $result = array(
+          'webpage_id' => $pageid_result['field_pageid_value'],
+          'catalog_id' => $catalog_result['field_catalog_id_value']
+          );
+      }
+  }
+  return $result;
+}
+
+/* Remove H2 & H3 tag fomr Mega Menu */
+function deluxe_core_item_list($variables) {
+  $items = $variables['items'];
+  $title = $variables['title'];
+  $type = $variables['type'];
+
+  if (isset($variables['attributes']['class'][0]) && substr($variables['attributes']['class'][0],0,8)=="megamenu") {
+    for($i=0;$i<count($items);$i++)
+      foreach ($items[$i] as $key=>$value) {
+       if($key=='data'){
+        $output = preg_replace('#<h([2-3]).*?class="(.*?)".*?>(.*?)<\/h[2-3]>#si', '<span class="${2}">${3}</span>', $value);
+        $items[$i][$key]=$output;
+      }
+    }
+  }
+  $attributes = $variables['attributes'];
+
+  $output = '<div class="item-list">';
+  if (isset($title) && $title !== '') {
+    $output .= '<h3>' . $title . '</h3>';
+  }
+
+  if (!empty($items)) {
+    $output .= "<$type" . drupal_attributes($attributes) . '>';
+    $num_items = count($items);
+    $i = 0;
+    foreach ($items as $item) {
+      $attributes = array();
+      $children = array();
+      $data = '';
+      $i++;
+      if (is_array($item)) {
+        foreach ($item as $key => $value) {
+          if ($key == 'data') {
+            $data = $value;
+          }
+          elseif ($key == 'children') {
+            $children = $value;
+          }
+          else {
+            $attributes[$key] = $value;
+          }
+        }
+      }
+      else {
+        $data = $item;
+      }
+      if (count($children) > 0) {
+        // Render nested list.
+        $data .= theme_item_list(array('items' => $children, 'title' => NULL, 'type' => $type, 'attributes' => $attributes));
+      }
+      if ($i == 1) {
+        $attributes['class'][] = 'first';
+      }
+      if ($i == $num_items) {
+        $attributes['class'][] = 'last';
+      }
+      $output .= '<li' . drupal_attributes($attributes) . '>' . $data . "</li>\n";
+    }
+    $output .= "</$type>";
+  }
+  $output .= '</div>';
+
+
+  return $output;
+}
+/* End Mega menu funtion */
+
+/*get website name*/
+function _deluxe_core_get_domain(){
+  $protocol = strtolower(substr($_SERVER["SERVER_PROTOCOL"], 0, strpos( $_SERVER["SERVER_PROTOCOL"], '/'))).'://';
+  $https = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') ? 'https://' : 'http://';
+  $siteurl = $protocol . $_SERVER['SERVER_NAME'];
+  $pieces = parse_url($siteurl);
+  $domain = isset($pieces['host']) ? $pieces['host'] : '';
+
+  if (preg_match('/(?P<domain>[a-z0-9][a-z0-9\-]{1,63}\.[a-z\.]{2,6})$/i', $domain, $regs)) {
+    switch (variable_get('subdomain')) {
+      case 'production':
+        $GLOBALS['base_url'] = $https .'www' . '.' .$regs['domain'];
+        break;
+      case '':
+        $GLOBALS['base_url'] = $https .'www' . '.' . $regs['domain'];
+        break;
+      default:
+         $GLOBALS['base_url'] = $https . variable_get('subdomain') . '.'.$regs['domain'];
+        break;
+    }
+    return $regs['domain'];
+  }
+}
+
+function deluxe_core_url_outbound_alter(&$path, &$options, $original_path) {
+  if(!strcmp($path,'/user/logout')) {
+     $raw_url = drupal_get_destination();
+     $options['query']['destination'] = drupal_get_path_alias($raw_url['destination']);
+  }
+}
+
+function deluxe_core_url_inbound_alter(&$path, &$options, $original_path) {
+
+  if($original_path != $path) {
+    //trailing slash
+    $path_with_trailing_slash = $path . '/';
+    if(!empty($path))
+    $path_altered = drupal_lookup_path('source', $path_with_trailing_slash);
+    // review page with  pattern product/review and review/, review/dynamic
+    $path_chunks = explode("/", $path);
+    $arg = arg();
+    $count = count($path_chunks);
+    if (($key = array_search('reviews', $path_chunks)) !== false) {
+       unset($path_chunks[$key]);
+       $path_build = drupal_get_normal_path(trim(implode("/", $path_chunks) , "/"));
+       if($key != 0){
+        $path_altered = $path_build . "/reviews";
+       }
+       else {
+        $path_altered = 'reviews/' . $path_build;
+       }
+     }
+     else if( $arg[0]=='reviews' && count($arg) ==1) {
+      $path_altered = 'reviews/' . $path;
+
+     }
+  }
+  if(!empty($path_altered)) {
+    $path = $path_altered;
+  }
+}
+
+function get_image_url_path($image_path){
+  $url = file_create_url($image_path);
+  $url = parse_url($url);
+  $path = $url['path'];
+  return $path;
+}
+
+
+function _deluxe_core_generate_breadcrumb_lgpages() {
+  $breadcrumb = array();
+  $is_direct_mail =0;
+  $mail_type = 'Layout Guidelines';
+  $arg = arg();
+  if (isset($arg[1]) && $arg[1] == 'direct-mail') {
+    $is_direct_mail = 1;
+    $mail_type = 'Mailing Layout Guidelines';
+  }
+  if (!isset($arg[1 + $is_direct_mail])){
+    $breadcrumb[] = $mail_type;
+  }
+  else {
+    $base_url = implode('/',array_slice($arg,0,2 + $is_direct_mail )) . '/';
+    $breadcrumb[] = l($mail_type, '/' . implode('/',array_slice($arg,0,1 + $is_direct_mail )) . '/');
+    $prod_id = get_filter_path_by_tid('', $arg[1 + $is_direct_mail] . '/');
+    $prodname = taxonomy_term_load($prod_id['entity_id']);
+    $prod_attr = array_slice(explode('~', $_GET['q']),1 + $is_direct_mail);
+    if(count($prod_attr)) {
+      $breadcrumb[] = l($prodname->name, $base_url);
+    }
+    else {
+      $breadcrumb[] = $prodname->name;
+    }
+    $count = 1;
+    $i = 1;
+    foreach ($prod_attr as $value) {
+
+      if(!empty($value)) {
+        $res = get_filter_path_by_tid('',$value);
+        $term = taxonomy_term_load($res['entity_id']);
+        if($term->vocabulary_machine_name == 'file_extension'){
+          $breadcrumb[] = l($term->name, $base_url .'~' . $term->field_layout_guideline_url['und'][0]['value']);
+        }
+        else if($count < 3){
+          $breadcrumb[] = l($term->name, $base_url . '~' . implode('~', array_slice($prod_attr, 0, $i)) . '/');
+        }
+        else {
+          $breadcrumb[] = $term->name;
+        }
+        $count++;
+      }
+      $i++;
+    }
+  }
+  return $breadcrumb;
+}
+
+/**
+ * Implements hook_token_info()
+* */
+function deluxe_core_token_info() {
+  $info['types']['deluxe'] = array(
+    'name' => t('Deluxe Custom Tokens'),
+    'description' => t("Tokens related to Tenant or Community"),
+  );
+
+  $info['tokens']['deluxe']['tenant_accronym'] = array(
+      'name' => t('tenant_accronym'),
+      'description' => t("The Site accronym if any e.g DFS, PsPrint"),
+    );
+
+  $info['tokens']['deluxe']['tenant'] = array(
+    'name' => t('tenant'),
+    'description' => t("The Community or Tenant name"),
+  );
+
+  $info['tokens']['deluxe']['tenant_mail'] = array(
+    'name' => t('tenant_mail'),
+    'description' => t("The Community or Tenant email"),
+  );
+
+  $info['tokens']['deluxe']['tenant_phone'] = array(
+    'name' => t('tenant_phone'),
+    'description' => t("The Community or Tenant contact number"),
+  );
+  $info['tokens']['deluxe']['tenant_domainname'] = array(
+    'name' => t('tenant_domainname'),
+    'description' => t("The Community or Tenant Domain name"),
+  );
+
+  $info['tokens']['deluxe']['tenant_prefix_metadata'] = array(
+    'name' => t('tenant_prefix_metadata'),
+    'description' => t("The Community or Tenant Domain Prefix"),
+  );
+
+  $info['tokens']['deluxe']['tenant_creative_email '] = array(
+    'name' => t('tenant_creative_email'),
+    'description' => t("The Community or Tenant Domain Creative email"),
+  );
+
+  $info['tokens']['deluxe']['tenant_support_email'] = array(
+    'name' => t('tenant_support_email'),
+    'description' => t("TThe Community or Tenant Domain support email"),
+  );
+    return $info;
+}
+
+function _deluxe_core_get_urlalias($path){
+  $query = db_select('url_alias', 'ua');
+  $query->fields('ua', array('alias'));
+  $query->condition('source', $path, '=');
+  $result = $query->execute()->fetchAssoc();
+  return $result['alias'];
+}
+/**
+ * implement hook_toke
+*/
+function deluxe_core_tokens($type, $tokens, array $data = array(), array $options = array() ){
+  $tanent_info = &drupal_static('tanent_info');
+  $replacement =  array();
+  $sanitize = !empty($options['sanitize']);
+  /*quickfix for  equantum*/
+
+  if($type == 'deluxe' ){
+    foreach ($tokens as $name => $original) {
+      $eq_path = _deluxe_core_get_urlalias(current_path());
+      if (strpos($eq_path, 'equantum') !== false){
+        $replacements['[deluxe:tenant_accronym]'] = '';
+        $replacements['[deluxe:tenant]'] = '';
+        $replacements['[deluxe:tenant_mail]'] = 'sales@e-quantum.com';
+        $replacements['[deluxe:tenant_domainname]'] = '';
+        $replacements['[deluxe:tenant_support_email]'] = '';
+        $replacements['[deluxe:tenant_phone]'] = '800.328.7804';
+        $replacements['[deluxe:tenant_prefix_metadata]'] =  'your';
+      }else{
+        switch ($name) {
+          case 'tenant_accronym':
+            $replacements[$original] = $tanent_info['tenant_accronym'];
+            break;
+          case 'tenant':
+            $replacements[$original] = $tanent_info['tenant_name'];
+            break;
+          case 'tenant_mail':
+            $replacements[$original] = $tanent_info['tenant_mail'];
+            break;
+          case 'tenant_phone':
+            $replacements[$original] = $tanent_info['tenant_phone'];
+            break;
+          case 'tenant_domainname':
+            $replacements[$original] = $tanent_info['tenant_domain'];
+            break;
+          case 'tenant_prefix_metadata':
+            $replacements[$original] = $tanent_info['tenant_prefix_metadata'];
+            break;
+          case 'tenant_creative_email':
+            $replacements[$original] = $tanent_info['tenant_creative_email'];
+            break;
+          case 'tenant_support_email':
+            $replacements[$original] = $tanent_info['tenant_support_email'];
+            break;
+          default:
+            # code...
+            break;
+        }
+      }
+    }
+      return $replacements;
+  }
+}
+
+function deluxe_core_permission() {
+  return array(
+    'administer tenant' => array(
+        'title' => t('Administer Tenant Profile configuration'),
+        'description' => t('Set and configure the tenant specifict settings and apis'),
+        ),
+    );
+
+}
+
+/**
+ * Implements hook_node_view()
+ * Match the tanents info with current doamin name and load the conetnt of matched node
+ *
+*/
+function deluxe_core_node_view($node, $view_mode, $langcode) {
+
+  if($node->type == 'page') {
+
+      // Get current node alias name
+      $alias =  drupal_lookup_path('alias', 'node/'.$node->vid, $langcode);
+
+      // Get all nodes of same URL Alias
+      if(function_exists('deluxe_core_get_same_alias_nodes'))
+          $alias_nodes = deluxe_core_get_same_alias_nodes($alias);
+
+      if(count($alias_nodes) > 1) {
+        foreach( $alias_nodes as $nodeid) {
+
+          if(function_exists('deluxe_core_field_tanent_info'))
+             $nodeinfo = deluxe_core_field_tanent_info($nodeid, 'node');
+
+          if ($nodeinfo) {
+
+            $nodedetail = node_load($nodeid);
+            $node->title =  $nodedetail->title;
+            $node->body['und'][0]['safe_value'] = token_replace($nodedetail->body['und'][0]['value']);
+            $node->field_hero_image = $nodedetail->field_hero_image;
+            $node->field_page_layout = $nodedetail->field_page_layout;
+          }
+        }
+      }
+  }
+
+  if($node->type == 'resources') {
+    $body = $node->body['und'][0]['value'];
+    $dom = new DOMDocument();
+    $dom->loadHTML($body);
+    $tags = $dom->getElementsByTagName('a');
+    foreach ($tags as $tag) {
+         $link = $tag->getAttribute('href');
+        if (preg_match('/http|mailto|sites|(\/resources)/i', $link) != 1 && strpos($link, '.') == false) {
+             $hrefs[$link] = "/resources/" . $link;  
+        }
+    }
+    $body_new = str_replace(array_keys($hrefs), array_values($hrefs), $body);
+    $node->body['und'][0]['value'] = $body_new;
+  }
+}
+
+/**
+ * Function to get tanent Info as per node ID
+ *
+*/
+function deluxe_core_field_tanent_info($object_id, $object_type, $return_value) {
+
+  $community_id = array();
+  if($object_type == 'node'){
+    $object = node_load($object_id);
+  }
+  elseif($object_type == 'taxonomy_term') {
+    $object = taxonomy_term_load($object_id);
+  }
+
+  $formtype = field_get_items($object_type, $object, 'field_tanents');
+  foreach($formtype as $itemid) {
+    $item = field_collection_field_get_entity($itemid);
+    $tanentNode = node_load($item->field_tanent_name['und'][0]['nid']);
+    $tanent[]  = $tanentNode->field_community_code['und'][0]['value'];
+    $community_id[] = $tanentNode->field_community_id['und'][0]['value'];
+  }
+
+  if (in_array($_SESSION['community'], $tanent) && !empty($tanent) &&  $return_value == FALSE){
+    return true;
+  }
+  if($return_value == TRUE) {
+    return $community_id;
+  }
+}
+
+/**
+ * Get nodes having same URL alias
+ *
+*/
+
+function deluxe_core_get_same_alias_nodes($aliasname) {
+
+  $results = db_select('url_alias', 'ua')
+  ->fields('ua', array('source'))
+  ->condition('alias', $aliasname ,'=')
+  ->execute()
+  ->fetchAll();
+
+  foreach ($results as $result) {
+
+    $array = explode('/', $result->source);
+    $alias_nodes[] = $array[1];
+  }
+  return $alias_nodes;
+}
+
+/**
+ * Implements hook_form_validate
+ *
+*/
+ function deluxe_core_form_validate($form, &$form_state) {
+
+    $path = $form_state['values']['path'];
+
+  // Ensure that the submitted alias does not exist yet.
+    $query = db_select('url_alias')
+    ->condition('alias', $path['alias'])
+    ->condition('language', $path['language']);
+
+    if (!empty($path['source'])) {
+      $query->condition('source', $path['source'], '<>');
+    }
+    $query->addExpression('1');
+    $query->range(0, 1);
+
+    $url_bypass_value = $form_state['values']['field_bypass_url_validation']['und'][0]['value'];
+
+    if ($query->execute()->fetchField() && (isset($url_bypass_value) && $url_bypass_value =='yes' )) {
+
+        deluxe_core_form_unset_error('path');
+        if(function_exists('deluxe_core_get_same_alias_nodes'))
+            $nodes = deluxe_core_get_same_alias_nodes($path['alias']);
+        unset($nodes[array_search(arg(1), $nodes)]);
+
+        foreach( $nodes as $nodeid)
+            $node_list .= l(t($nodeid), "node/" .$nodeid) . "  ";
+
+        drupal_set_message("The alias is already use for another nodes:" . $node_list, 'warning');
+    }
+}
+
+
+/**
+ * Clears an error against one form element.
+ *
+ * @param $name
+ *   The name of the form element.
+ */
+function deluxe_core_form_unset_error($name) {
+
+  $errors = &drupal_static('form_set_error', array());
+  $removed_messages = array();
+  if (isset($errors[$name])) {
+    $removed_messages[] = $errors[$name];
+    unset($errors[$name]);
+  }
+  $_SESSION['messages']['error'] = array_diff($_SESSION['messages']['error'], $removed_messages);
+
+    if (empty($_SESSION['messages']['error']))
+      unset ($_SESSION['messages']['error']);
+}
+
+/**
+ * Implements hook_block_info
+ *
+*/
+function deluxe_core_block_info() {
+  $blocks = array();
+  $blocks['search_api'] = array(
+    'info' => t('Search API'),
+    );
+  $blocks['subscription_api'] = array(
+    'info' => t('Subscription API'),
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view
+ *
+*/
+function deluxe_core_block_view($delta ='') {
+  $block = array();
+  switch ($delta) {
+    case 'search_api':
+      $block['content'] = _deluxe_core_search_api();
+    break;
+    case 'subscription_api':
+      $block['content'] = _deluxe_core_subscription_api();
+    break;
+    default:
+      # code...
+    break;
+  }
+  return $block;
+}
+
+/**
+ * Search form
+ *
+*/
+function _deluxe_core_search_api() {
+  $output = '<form id="search-form-top" class="search-form">
+            <div class="button-inside clearfix">
+            <input id="search-field" class="search-field no-style" type="text" placeholder="Search Products">
+            <div class="search-button no-style no-text"></div>
+            </div>
+            </form>';
+
+  $js_group = '';
+  if(arg(0)=='node' &&  is_numeric(arg(1))) {
+    $node = node_load(arg(1));
+    if($node->type =='product')
+        $js_group = JS_LIBRARY;
+  }
+
+drupal_add_js('/httphandler/bundle/common-wholesale', array('group' => $js_group,'scope' => 'footer','type' => 'external', 'weight' => 1));
+drupal_add_js('/httphandler/PsPrintAppInit', array('group' => $js_group,'scope' => 'footer','type' => 'external', 'weight' => 1));
+drupal_add_js('/httphandler/bundle/knockout', array('group' => $js_group, 'scope' => 'footer','type' => 'external', 'weight' => 1));
+drupal_add_js('/httphandler/bundle/widgets-v2', array('group' => $js_group, 'scope' => 'footer','type' => 'external', 'weight' => 1));
+  return $output;
+}
+/* Subscription Form */
+function _deluxe_core_subscription_api() {
+  $output = '<div class="subscribe-section"><div class="subscribe-title">Get Connected</div><div class="subscribe-description">Get PsPrint deals &amp; design tips via email</div><form class="subscribe-form clearfix"><div class="form-item-name"><input id="SignUpEmail" class="sign-field" type="text" name="SignUpEmail" value="" placeholder="Enter email address"   /> <input class="sign-button button" type="submit" value="SIGN UP" /> <div class="dfs-error"><span class="error">Please enter a valid email.</span></div></div></form><div class="throbber-signup"></div></div>';
+
+  return $output;
+}
+
+function deluxe_core_image(&$variables) {
+  if(module_exists('token')){
+    $variables['alt'] = token_replace($variables['alt']);
+    $variables['title'] = token_replace($variables['title']);
+  }
+  return theme_image($variables);
+}
+
+function _deluxe_core_redirect($tanent_info) {
+  if(user_is_anonymous()){
+
+      switch ($tanent_info['community']) {
+      case 'DFSFullColor':
+      case 'Safeguard':
+            dfs_anonymous_user_redirect();
+        break;
+      case 'PsPrint':
+             _psp_pages_modal_header();
+      default:
+        # code...
+        break;
+    }
+
+
+  }
+}
+function deluxe_core_menu_link_insert($link){
+ $path_validation = variable_get('custom_any_menu_path');
+  if (module_exists('menu_import') && module_exists('any_menu_path') && $path_validation) {
+  $mlid = $link['mlid'];
+  $link_path = $link['path'];
+  $url_parsed = drupal_parse_url($link_path);
+  $original_link = db_select('menu_links', 'm')
+                    ->fields('m', array('options'))
+                    ->condition('mlid', $mlid)
+                    ->execute()
+                    ->fetchAssoc();
+  if (!empty($original_link['options'])) {
+    $options = unserialize($original_link['options']);
+  }
+  if(!empty($url_parsed['fragment'])) {
+    $options['fragment'] = unserialize($original_link['options']);
+  }
+  else {
+    unset($options['fragment']);
+  }
+
+  if(!empty($url_parsed['query'])){
+    $options['query'] = $url_parsed['query'];
+  }
+  else {
+    unset($options['query']);
+  }
+
+    db_update('menu_links')
+           ->fields(array(
+              'link_path' => $url_parsed['path'] ? $url_parsed['path'] : '',
+              'options' => serialize($options),
+            ))
+           ->condition('mlid', $mlid)
+           ->execute();
+
+   $any_menus = variable_get('any_menu_path', array());
+
+    if (empty($any_menus)) {
+      $any_menus[] = $mlid;
+    }
+    else {
+      if (!in_array($mlid, $any_menus)) {
+        $any_menus[] = $mlid;
+      }
+    }
+    variable_set('any_menu_path', $any_menus);
+  }
+}
+
+function _deluxe_get_promotion_content_product_category($product_category) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node')
+          ->entityCondition('bundle', 'promotions')
+          ->propertyCondition('status', NODE_PUBLISHED)
+          ->fieldCondition('field_select_product_category', 'tid', $product_category, '=');
+  $result = $query->execute();
+  if (isset($result['node'])) {
+    $promotion = node_load(current(array_keys($result['node'])));
+    $promotion = _deluxe_core_tenantinfo($promotion->field_tanents['und']);
+    return $promotion;
+  }
+}
+
+function _deluxe_core_initialize_breadcrumbs() {
+
+   $initialized_data = &drupal_static(__FUNCTION__);
+  if (!isset($initialized_data)) {
+    $path_alias = drupal_get_path_alias(current_path());
+    $node = menu_get_object("node", 1, current_path());
+    if ((strpos($path_alias, 'reviews')) !== false) {
+      $node = isset($node->field_select_product['und']) ? $node->field_select_product['und'][0]['node'] : $node;
+      isset($node) ? $node->is_review = TRUE : NULL;
+    }
+    $initialized_data['node'] = $node;
+  }
+  return $initialized_data;
+
+}
+
+
+
+/**
+ * Get Redis client for Predis library.
+ *
+ * @return \Predis\Client
+ */
+
+function _deluxe_core_predis_client() {
+  $redis = &drupal_static(__FUNCTION__);
+  if(!isset($redis)){
+    require  PREDIS_BASE_PATH . "/autoload.php";
+    Predis\Autoloader::register();
+
+    // since we connect to default setting localhost
+    // and 6379 port there is no need for extra
+    // configuration. If not then you can specify the
+    // scheme, host and port to connect as an array
+    // to the constructor.
+    //
+    //
+    $connection['scheme'] = 'tcp';
+    $connection['host'] = variable_get('redis_client_host', "127.0.0.1");
+    $connection['port'] = variable_get('redis_client_port', "6379");
+    $connection['database'] = variable_get('redis_client_database', 0);
+    $connection['password'] = variable_get('redis_client_password', '');
+    $connection = array_filter($connection);
+
+    try {
+        $redis = new Predis\Client($connection);
+
+    }
+    catch (Exception $e) {
+      $replacements = array('@error' => $e->getMessage());
+      $message = 'Error @error  occured for Redis connections';
+      watchdog('redis', $message, $replacements, array(), WATCHDOG_ERROR);
+   }
+  }
+  return $redis;
+}
+
+function _deluxe_core_predis_set($redis, $key, $value) {
+  $redis->set($key, $value);
+}
+
+function _deluxe_core_predis_get($redis,$key) {
+  $value = $redis->get($key);
+  return $value;
+}
+
+
+function deluxe_core_pager_link(&$variables){
+  static $rel_prev = FALSE, $rel_next = FALSE, $prev_identifier = array('< previous', 'Previous'),   $next_identifier = array('Next', 'next >');
+  $text = $variables['text'];
+  $page_new = $variables['page_new'];
+  $element = $variables['element'];
+  $parameters = $variables['parameters'];
+  $attributes = $variables['attributes'];
+  $page = isset($_GET['page']) ? $_GET['page'] : '';
+  if ($new_page = implode(',', pager_load_array($page_new[$element], $element, explode(',',$page)))) {
+    $parameters['page'] = $new_page;
+  }
+  $query = array();
+  if (count($parameters)) {
+    $query = drupal_get_query_parameters($parameters, array());
+  }
+  if ($query_pager = pager_get_query_parameters()) {
+    $query = array_merge($query, $query_pager);
+  }
+  $q = isset($_GET['q']) ? $_GET['q'] : '';
+  $q = drupal_get_path_alias($q);
+  $original_text = $text;
+  $link = array(
+      'title' => $text,
+      'href' => $q,
+      'attributes' => $attributes,
+      'query' => count($query) ? $query:NULL
+  );
+
+
+
+  // Pagination with rel=“next” and rel=“prev”. Does not support well multiple
+  // pagers on the same page - it will create relnext and relprev links
+  // in header for that case only for the first pager that is rendered.
+  if (!$rel_prev && in_array($text, $prev_identifier)) {
+    $rel_prev = TRUE;
+    drupal_add_html_head_link(array(
+        'rel' => 'prev',
+        'href' => url($link['href'],array(
+            'query' => $link['query'],
+            'absolute' => TRUE
+        ))
+    ));
+  }
+  if (!$rel_next && in_array($original_text, $next_identifier)){
+    $rel_next = TRUE;
+    drupal_add_html_head_link(array(
+        'rel' => 'next',
+        'href' => url($link['href'],array(
+            'query' => $link['query'],
+            'absolute' => TRUE
+        ))
+    ));
+  }
+  return l($link['title'],$link['href'],array(
+      'attributes' => $link['attributes'],
+      'query' => $link['query']
+  ));
+}
+
+function deluxe_core_views_post_execute(&$view) {
+  $argpath = implode('/', arg());
+  if (strpos($argpath, 'admin') !== false  && strpos($argpath, 'preview')) {
+    return;
+  }
+  switch ($view->name) {
+    case 'resources':
+      if(isset($view->result) && empty($view->result)) {
+       drupal_not_found();
+      drupal_exit();
+      }
+      break;
+
+    default:
+      # code...
+      break;
+  }
+
+}

@@ -1,0 +1,6 @@
+name = Deluxe Tracker code
+package = Deluxe
+description = Manage Tracker, ominute and GA for deluxe.
+version = "7.x-1.0"
+core = "7.x"
+

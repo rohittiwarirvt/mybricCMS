@@ -1,0 +1,7 @@
+name = SEO Data form
+package = Deluxe
+description = Manage Seo Data for content.
+version = "7.x-1.0"
+core = "7.x"
+project = "seo_data"
+

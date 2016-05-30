@@ -1,0 +1,56 @@
+<?php
+
+/**
+*  Get Max Promo for Given CatalogID/CatalogIDs
+*/
+function _deluxe_promotion_get_max_promo_for_catalog($catalog_id, $community_id = 1){
+  if(!is_array($catalog_id)) {
+    $catalog_id = (array)$catalog_id;
+  }
+
+  $now = date('Y-m-d H:i:s');
+  $query = db_select('Promotion', 'p');
+  $query->fields('p', array('PromotionID', 'CommunityID', 'Discount', 'StartDate', 'EndDate', 'IsActive'));
+  $query->addExpression('MAX(Discount)');
+  $or_for_startdate = db_or()->condition('p.StartDate', $now, '<=')->isNull('p.StartDate');
+  $or_for_enddate = db_or()->condition('p.EndDate', $now, '>=')->isNull('p.EndDate');
+  $or_for_discount = db_or()->condition('p.Discount', 0, '>')->isNull('p.StartDate');
+  $query->condition('p.CatalogID', $catalog_id, 'IN');
+  $query->condition('p.CommunityID', $community_id);
+  $query->condition($or_for_startdate);
+  $query->condition($or_for_enddate);
+  $query->condition($or_for_discount);
+  dpq($query);
+  $result = $query->execute()->fetchAssoc();
+  return $result;
+}
+
+
+
+/**
+*  Get List of Catalog IDs from Category IDs
+*/
+
+function _deluxe_promotion_get_catalogids_from_category_id($category_id='NULL') {
+
+  //Get CatalogAdjustmentIDs
+  $catalog_adjustment_id = array();
+  $query = db_select('CategoryToCatalogAdjustment', 'c2ca');
+  $query ->distinct();
+  $query->fields('c2ca', array('CatalogAdjustmentID'));
+  $query->condition('c2ca.CategoryID', $category_id, '=');
+  $result = $query->execute()->fetchAll();
+  foreach ($result as $key => $value) {
+    $catalog_adjustment_id[] = "{$value->CatalogAdjustmentID}";
+  }
+  // Get CatalogIDs
+  $query = db_select('CatalogAdjustment', 'ca');
+  $query ->distinct();
+  $query->fields('ca', array('CatalogID'));
+  $query->condition('ca.CatalogAdjustmentID', $catalog_adjustment_id, 'IN');
+  $result_category_id = $query->execute()->fetchAll();
+  foreach ($result_category_id as $key => $value) {
+    $ret_catelog_id[] = "{$value->CatalogID}";
+  }
+  return $ret_catelog_id;
+}

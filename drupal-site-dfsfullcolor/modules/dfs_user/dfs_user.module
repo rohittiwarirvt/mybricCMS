@@ -1,0 +1,447 @@
+<?php
+
+module_load_include('inc', 'dfs_user', 'dfs_user.pages');
+module_load_include('inc', 'dfs_user' , 'dfs_user.curl_wrappers');
+module_load_include('inc', 'dfs_user', 'psp_user.pages');
+
+/**
+ * user login page redirection
+ */
+function dfs_anonymous_user_redirect() {
+  static $path_prevent_redirect = array('login.aspx','dfs/user/register','passwordreset');
+  $destinatin_alias = array();
+  static $already_added = FALSE;
+    if(!$already_added) {
+      drupal_add_js(drupal_get_path('module', 'dfs_user') . '/js/login.js');
+      drupal_add_js(drupal_get_path('module', 'dfs_user') . '/js/registration.js');
+      drupal_add_js(drupal_get_path('module', 'dfs_user') . '/js/forgot-pass.js');
+      drupal_add_css(drupal_get_path('module', 'dfs_user') . '/css/login-registration.css');
+      $already_added = TRUE;
+    }
+  $redirect = FALSE;
+    // Allow cron, siteinstall, xmlrpc
+  foreach (array('cron', 'install', 'xmlrpc') as $task) {
+    $path = base_path() . "{$task}.php";
+    if (substr(request_uri(), 0, strlen($path)) == $path) {
+        return ;
+    }
+  }
+  if (!drupal_is_cli()) {
+      $path = drupal_strtolower(filter_xss($_GET['q']));
+      $path = $path ? $path : '<front>';
+    if (!in_array($path, $path_prevent_redirect)) {
+      $redirect = TRUE;
+    }
+
+    if($redirect) {
+      $raw_url = drupal_get_destination();
+      $destinatin_alias['destination'] = drupal_get_path_alias($raw_url['destination']);
+
+      // Added to avoid redirection for 'equantum' contents
+      if (strpos($destinatin_alias['destination'],'equantum') !== false)
+          return true;
+      else
+         drupal_goto('Login.aspx', array('query' => $destinatin_alias));
+    }
+  }
+}
+
+/**
+ * Implements hook_menu() .
+ */
+function dfs_user_menu() {
+    $tanent_info = &drupal_static('tanent_info');
+      $items['Login.aspx'] = array(
+        'title' => 'Welcome to ' . $tanent_info['community'],
+        'page callback' => 'dfs_auth_user_form_build',
+        'access callback' => TRUE,
+        );
+      $items['dfs/user/register'] = array(
+        'title' => 'Welcome to ' . $tanent_info['community'] . ' Dealer Registration',
+        'page callback' => 'dfs_auth_register_form_build',
+        'access callback' => 'user_is_anonymous',
+        'file' => 'dfs_user.pages.inc',
+      );
+
+      $items['PasswordReset'] = array(
+        'title' => 'Forgot Password',
+        'page callback' => 'dfs_auth_forgot_password_form_build',
+        'access callback' => 'user_is_anonymous',
+        'file' => 'dfs_user.pages.inc',
+      );
+     $items['user/%ctools_js/psprint/login'] = array(
+        'title' => 'Login',
+        'page callback' => 'psp_ctools_login_form_build',
+        'page arguments' => array(1),
+        'access callback' => TRUE,
+        'file' => 'psp_user.pages.inc',
+        );
+      $items['user/%ctools_js/psprint/register'] = array(
+        'title' => 'Create ' . $tanent_info['community'] . ' Account',
+        'page callback' => 'psp_ctools_register_form_build',
+        'page arguments' => array(1),
+        'access callback' => 'user_is_anonymous',
+        'file' => 'psp_user.pages.inc',
+      );
+
+      $items['user/%ctools_js/psprint/resetpassword'] = array(
+        'title' => 'Forgot Password',
+        'page callback' => 'psp_ctools_reset_form_build',
+        'access callback' => 'user_is_anonymous',
+        'page arguments' => array(1),
+        'file' => 'psp_user.pages.inc',
+      );
+  return $items;
+}
+
+/**
+ * Implements hook_theme
+ */
+function dfs_user_theme() {
+  return array(
+    'dfs_auth_page' => array(
+      'variables' => array(
+        'content' => NULL,
+        'destination' => NULL,
+        ),
+      'template' => 'dfs-auth-page',
+      'file' => 'dfs.theme.inc',
+      'path' => drupal_get_path('module', 'dfs_user') . '/theme',
+      ),
+    );
+}
+
+/**
+ * Submit handler for the login form. Load $user object and perform standard login
+ * tasks. The user is then redirected to the My Account page. Setting the
+ * destination in the query string overrides the redirect.
+ */
+function dfs_user_form_submit($form, &$form_state) {
+  global $user;
+  $user = user_load($form_state['uid']);
+  _dfs_redirection($form, $form_state);
+  user_login_finalize($form_state);
+}
+
+/**
+ * Submit form for registration api
+ */
+function dfs_register_form_submit($form, &$form_state) {
+  global $user;
+  $user = user_load($form_state['uid']);
+  _dfs_redirection($form, $form_state);
+  user_login_finalize($form_state);
+}
+
+/**
+* Implements hook_user_logout
+*
+*/
+function dfs_user_user_logout($account){
+  $tanent_info = &drupal_static('tanent_info');
+  global $base_url;
+
+  if (isset($account) && $account->uid != 1) {
+    $logout_service = $base_url .  variable_get('logout_' . $tanent_info['community']);
+    $curl_obj = &drupal_static("curl_obj");
+    $result = $curl_obj->post($logout_service );
+    switch ($tanent_info['community']) {
+    case 'PsPrint':
+      unset($_GET['destination']);
+        break;
+    }
+    return $result;
+  }
+}
+
+
+
+/**
+ * Function called to logout user from Drupal when user logout from ASP.
+ */
+function _dfs_user_logout() {
+  global $user;
+  $tmp = NULL;
+  session_destroy ();
+  user_module_invoke ( 'logout', $tmp, $user );
+  $user = drupal_anonymous_user ();
+  $result = array(
+              'message' => 'Logout Successful',
+            );
+  return $result;
+}
+
+
+
+
+/**
+ * implements hook_element_info
+ */
+
+function dfs_user_element_info() {
+  $types['phone_confirm'] = array(
+    '#input' => TRUE,
+    '#process' => array('form_process_phone_confirm', 'register_form_process_phone_confirm'),
+    '#theme_wrapper'=> array('form_element'),
+    );
+    $types['email_confirm'] = array(
+    '#input' => TRUE,
+    '#process' => array('form_process_email_confirm', 'register_form_process_email_confirm'),
+    '#theme_wrapper'=> array('form_element'),
+    '#error' =>t('<span>Please Enter Contact Name.</span>'),
+      );
+    $types['pass_confirm'] = array(
+    '#input' => TRUE,
+    '#process' => array('form_process_pass_confirm', 'register_form_process_pass_confirm'),
+    '#theme_wrapper'=> array('form_element'),
+    '#error' =>t('<span>Please Enter Contact Name.</span>'),
+    );
+  return $types;
+}
+
+/**
+ * phone confirm process
+ * @param  [type] $element [description]
+ * @return [type]          [description]
+ */
+function form_process_phone_confirm($element) {
+  $element['phone1'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Company Phone Number'),
+    '#value' => empty($element['#value']) ? NULL : $element['#value']['phone1'],
+    '#description' => t('(Please do not include special characters like (, ), -, &lt;space&gt;)'),
+    '#required' => TRUE,
+    '#attributes' => array('class' => array('phone-field')),
+    '#error' =>t('<span>Please enter Company Phone number.</span>'),
+    );
+    $element['phone2'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Re-enter to verify'),
+    '#value' => empty($element['#value']) ? NULL : $element['#value']['phone2'],
+    '#required' => TRUE,
+    '#attributes' => array('class' => array('phone-confirm')),
+    '#error' =>t('<span>Please re-enter Company Phone number.</span>'),
+    );
+
+    $element['#element_validate'] = array('phone_confirm_validate');
+    $element['#tree'] = TRUE;
+    if(isset($element['#size'])) {
+      $element['phone1']['#size'] = $element['phone2']['#size'] = $element['#size'];
+    }
+    return $element;
+}
+
+function register_form_process_phone_confirm($element) {
+  global $user;
+
+  $js_settings = array(
+    'phone' => array(),
+    );
+  $element['#attached']['js'][] = drupal_get_path('module', 'dfs_user') . '/js/phone-confirm.js';
+
+  // Ensure settings are only added once per page
+
+  static $already_added = FALSE;
+  if(!$already_added) {
+    $already_added = TRUE;
+    $element['#attached']['js'][] = array('data' => $js_settings, 'type' => 'setting');
+  }
+
+  return $element;
+}
+
+function phone_confirm_validate($element, &$element_state) {
+  $pass1 = trim($element ['phone1']['#value']);
+  $pass2 = trim($element ['phone2']['#value']);
+  if (!empty($phone1) || !empty($phone2)) {
+    if (strcmp($phone1, $phone2)) {
+      form_error($element, t('The specified Phone numbers do not match.'));
+    }
+  }
+  elseif ($element ['#required'] && !empty($element_state ['input'])) {
+    form_error($element, t('Phone field is required.'));
+  }
+
+  // Password field must be converted from a two-element array into a single
+  // string regardless of validation results.
+  form_set_value($element ['phone1'], NULL, $element_state);
+  form_set_value($element ['phone2'], NULL, $element_state);
+  form_set_value($element, $pass1, $element_state);
+
+  return $element;
+
+}
+/**
+ * phone Email confirm
+ * @param  [type] $element [description]
+ * @return [type]          [description]
+ */
+function form_process_email_confirm($element) {
+  $element['email1'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Default Email address'),
+    '#value' => empty($element['#value']) ? NULL : $element['#value']['email1'],
+    '#required' => TRUE,
+    '#attributes' => array('class' => array('email-field')),
+    '#error' =>t('<span>Please enter Email Address.</span>'),
+    );
+    $element['email2'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Re-enter to verify'),
+    '#value' => empty($element['#value']) ? NULL : $element['#value']['email2'],
+    '#required' => TRUE,
+    '#attributes' => array('class' => array('email-confirm')),
+    '#error' =>t('<span>Please Re enter your Email Address.</span>'),
+    );
+
+    $element['#element_validate'] = array('email_confirm_validate');
+    $element['#tree'] = TRUE;
+    if(isset($element['#size'])) {
+      $element['email1']['#size'] = $element['email2']['#size'] = $element['#size'];
+    }
+    return $element;
+}
+
+function register_form_process_email_confirm($element) {
+  global $user;
+
+  $js_settings = array(
+    'emailconfirm' => array(),
+    );
+  $element['#attached']['js'][] = drupal_get_path('module', 'dfs_user') . '/js/email-confirm.js';
+
+  // Ensure settings are only added once per page
+
+  static $already_added = FALSE;
+  if(!$already_added) {
+    $already_added = TRUE;
+    $element['#attached']['js'][] = array('data' => $js_settings, 'type' => 'setting');
+  }
+
+  return $element;
+}
+
+function email_confirm_validate($element, &$element_state) {
+  $pass1 = trim($element ['email1']['#value']);
+  $pass2 = trim($element ['email']['#value']);
+  if (!empty($email1) || !empty($email2)) {
+    if (strcmp($email1, $email2)) {
+      form_error($element, t('The specified emails do not match.'));
+    }
+  }
+  elseif ($element ['#required'] && !empty($element_state ['input'])) {
+    form_error($element, t('Email field is required.'));
+  }
+
+  // Password field must be converted from a two-element array into a single
+  // string regardless of validation results.
+  form_set_value($element ['email1'], NULL, $element_state);
+  form_set_value($element ['email2'], NULL, $element_state);
+  form_set_value($element, $pass1, $element_state);
+
+  return $element;
+
+}
+/**
+ * pass confirm process
+ * @param  [type] $element [description]
+ * @return [type]          [description]
+ */
+function form_process_pass_confirm($element) {
+  $element['pass1'] = array(
+    '#type' => 'password',
+    '#title' => t('Registration Password'),
+    '#value' => empty($element['#value']) ? NULL : $element['#value']['pass1'],
+    '#required' => TRUE,
+    '#attributes' => array('class' => array('pass-field')),
+    '#error' =>t('<span>Please Enter your password</span>'),
+    );
+    $element['pass2'] = array(
+    '#type' => 'password',
+    '#title' => t('Re-enter to confirm'),
+    '#value' => empty($element['#value']) ? NULL : $element['#value']['pass2'],
+    '#required' => TRUE,
+    '#attributes' => array('class' => array('pass-confirm')),
+    '#error' =>t('<span>Please Enter Confirm Password. </span>'),
+    );
+
+    $element['#element_validate'] = array('pass_confirm_validate');
+    $element['#tree'] = TRUE;
+    if(isset($element['#size'])) {
+      $element['pass1']['#size'] = $element['pass2']['#size'] = $element['#size'];
+    }
+    return $element;
+}
+
+function register_form_process_pass_confirm($element) {
+  global $user;
+
+  $js_settings = array(
+    'password' => array(
+      'strengthTitle' => t('Password strength:'),
+      'hasWeaknesseses' => t('To make your password stronger'),
+      'tooShort' => t('Make it at least 6 characters long'),
+      'addLowerCase' => t('Add uppercase'),
+      'addUpperCase' => t('Add lowecase'),
+      'addNumbers' => t('Add numbers'),
+      'addPunctuation' => t('Add punctuation'),
+      'sameAsUsername' => t('Make it different from your username'),
+      'confirmSuccess'=> t('yes'),
+      'confirmFailure' => t('no'),
+      'weak' => t('Weak'),
+      'fair' => t('Fair'),
+      'good' => t('Good'),
+      'strong' => t('Strong'),
+      'confirmTitle' => t('Passwords Match'),
+      'username' => (isset($user->name) ? $user->name : ''),
+      ),
+    );
+  $element['#attached']['js'][] = drupal_get_path('module', 'dfs_user') . '/js/pass-confirm.js';
+
+  // Ensure settings are only added once per page
+
+  static $already_added = FALSE;
+  if(!$already_added) {
+    $already_added = TRUE;
+    $element['#attached']['js'][] = array('data' => $js_settings, 'type' => 'setting');
+  }
+
+  return $element;
+}
+function pass_confirm_validate($element, &$element_state) {
+  $pass1 = trim($element ['pass1']['#value']);
+  $pass2 = trim($element ['pass2']['#value']);
+  if (!empty($pass1) || !empty($pass2)) {
+    if (strcmp($pass1, $pass2)) {
+      form_error($element, t('The specified passwords do not match.'));
+    }
+  }
+  elseif ($element ['#required'] && !empty($element_state ['input'])) {
+    form_error($element, t('Password field is required.'));
+  }
+
+  // Password field must be converted from a two-element array into a single
+  // string regardless of validation results.
+  form_set_value($element ['pass1'], NULL, $element_state);
+  form_set_value($element ['pass2'], NULL, $element_state);
+  form_set_value($element, $pass1, $element_state);
+
+  return $element;
+
+}
+
+
+
+function dfs_user_theme_registry_alter(&$theme_registry) {
+  $path = drupal_get_path('module', 'dfs_user');
+  if (isset($theme_registry['button'])) {
+    $theme_registry['button']['includes'][] = $path . '/theme/dfs.theme.inc';
+    $theme_registry['button']['function'] = 'theme_dfs_button';
+  }
+  if(isset($theme_registry['form_element'])) {
+    $theme_registry['form_element']['includes'][] = $path . '/theme/dfs.theme.inc';
+    $theme_registry['form_element']['function'] = 'theme_dfs_form_element';
+  }
+}
+
+

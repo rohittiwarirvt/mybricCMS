@@ -1,0 +1,221 @@
+<?php
+
+/**
+ * Implements hook_init().
+ */
+function seo_data_init() {
+
+}
+
+/**
+ * hook form alter
+ */
+function seo_data_form_alter(&$form, &$form_state, $form_id) {
+
+  $vacabulary_list = array('categories', 'tags');
+  if($form_id == 'resources_node_form' || $form_id == 'article_node_form' || ($form_id == 'taxonomy_form_term'  && (in_array($form['#term']['vocabulary_machine_name'], $vacabulary_list)))) {
+
+    module_load_include('inc', 'seo_data', 'seo_data.admin');
+    $seo_form = seo_form();
+    drupal_add_css(drupal_get_path('module', 'seo_data') . '/seo_data.css');
+
+    if(isset($form['nid']['#value']) || isset($form['#term']['tid']))
+        $fieldset_title = t('Update Seo Data');
+    else  
+        $fieldset_title = t('Insert Seo Data');
+    
+    $form['seo_data'] = array(
+      '#type' => 'fieldset',
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#weight' => 50,
+      '#attributes' => array('class' => array('seo-form-wrapper')),
+      '#title' => $fieldset_title,
+    );
+    $form['seo_data']['seo'] = $seo_form;
+    $form['#validate'][] = '_seo_data_form_validate';
+    $form['#submit'][] = 'seo_data_submit_values';
+  }
+}
+
+/**
+ * Seo form validation logic
+ */
+function _seo_data_form_validate($form, &$form_state) {
+  $not_NULL = array('H1', 'FriendlyUrl', 'SeoCopyBlockTop', 'CommunityID');
+  foreach ($not_NULL as  $value) {
+   if (empty($form_state['values'][$value])) {
+     form_set_error($value, t('!value Cannot be NULL or Empty.', array('!value' => $value )));
+   }
+  }
+}
+
+/**
+ * Seo data submit call
+ */
+function seo_data_submit_values($form,$form_state) {
+  seo_data_insert_record($form_state['values']);
+}
+
+/**
+* Insert new record in  WebPage_design_tool and SeoData_design_tool
+* Update existing record in WebPage_design_tool and SeoData_design_tool
+*/
+function seo_data_insert_record($data) {
+
+  $date = date('Y-m-d h:i:s');
+  $WebPage_table = 'WebPage_design_tool';
+  $SeoData_table = 'SeoData_design_tool';
+
+  $CommunityID  = $data['CommunityID'];
+  $FriendlyUrl  = $data['FriendlyUrl'];
+  $CreatedBy  = $data['CreatedBy'];
+  $IsActive  =$data['IsActive'];
+  $Version  = $data['Version'];
+  $Title  = $data['Title'];
+  $Description  = $data['Description'];
+  $Canonical  = $data['Canonical'];
+  $SeoCopyBlock  = array_key_exists('value', $data['SeoCopyBlock']) ? $data['SeoCopyBlock']['value'] : $data['SeoCopyBlock'];
+  $Robots  = $data['Robots'];
+  $PageType  = $data['PageType'];
+  $Authorship  = $data['Authorship'];
+  $OpenGraphType  = $data['OpenGraphType'];
+  $OpenGraphTitle  = $data['OpenGraphTitle'];
+  $OpenGraphDescription  = $data['OpenGraphDescription'];
+  $OpenGraphUrl  = $data['OpenGraphUrl'];
+  $OpenGraphImage  = $data['OpenGraphImage'];
+  $TwitterCard  = $data['TwitterCard'];
+  $TwitterTitle  = $data['TwitterTitle'];
+  $TwitterDescription  = $data['TwitterDescription'];
+  $TwitterImage  = $data['TwitterImage'];
+  $TwitterUrl  = $data['TwitterUrl'];
+  $SchemaType  = $data['SchemaType'];
+  $SchemaName  = $data['SchemaName'];
+  $SchemaDescription  = $data['SchemaDescription'];
+  $SchemaImage  = $data['SchemaImage'];
+  $UpdatedBy  = $data['UpdatedBy'];
+  $SeoCopyBlockTop  = $data['SeoCopyBlockTop'];
+  $H1  = $data['H1'];
+  $Created = $data['Created'];
+  $Updated = $data['Updated'];
+  //Check if record is already exists or not
+  $query = db_select($WebPage_table, 'wb');
+  $query->join($SeoData_table, 'se', 'se.WebPageID = wb.WebPageID');
+  $query->fields('wb', array('WebPageID'));
+  $query->condition('wb.CommunityID',$CommunityID, '=');
+  $query->condition('wb.FriendlyUrl',$FriendlyUrl, '=');
+  $result = $query->execute()->fetchAssoc();
+  $exist_WebPageID = $result['WebPageID'];
+
+  if($exist_WebPageID) {
+      //WebPage_design_tool update
+    $WebPage_design_tool_update = db_update($WebPage_table)
+    ->fields(array(
+      'CreatedBy' => $CreatedBy,
+      'IsActive' => $IsActive,
+      'Updated' => $date,
+      'UpdatedBy' => $UpdatedBy,
+    ))
+    ->condition('WebPageID', $exist_WebPageID)
+    ->execute();
+
+    //SeoData_design_tool update
+     $seodata_design_tool_update = db_update($SeoData_table)
+      ->fields(array(
+        'CreatedBy' => $CreatedBy,
+        'IsActive' => $IsActive,
+        'Version' => $Version,
+        'Title' => $Title,
+        'Description' => $Description,
+        'Canonical' => $Canonical,
+        'SeoCopyBlock' => $SeoCopyBlock,
+        'Robots' => $Robots,
+        'PageType' => $PageType,
+        'Authorship' => $Authorship,
+        'OpenGraphType' => $OpenGraphType,
+        'OpenGraphTitle' => $OpenGraphTitle,
+        'OpenGraphDescription' => $OpenGraphDescription,
+        'OpenGraphUrl' => $OpenGraphUrl,
+        'OpenGraphImage' => $OpenGraphImage,
+        'TwitterCard' => $TwitterCard,
+        'TwitterTitle' => $TwitterTitle,
+        'TwitterDescription' => $TwitterDescription,
+        'TwitterImage' => $TwitterImage,
+        'TwitterUrl' => $TwitterUrl,
+        'SchemaType' => $SchemaType,
+        'SchemaName' => $SchemaName,
+        'SchemaDescription' => $SchemaDescription,
+        'SchemaImage' => $SchemaImage,
+        'Updated' => $Updated,
+        'UpdatedBy' => $UpdatedBy,
+        'SeoCopyBlockTop' => $SeoCopyBlockTop,
+        'H1' => $H1,
+    ))
+    ->condition('WebPageID', $exist_WebPageID)
+    ->execute();
+  }
+  else {
+   //WebPage_design_tool insert
+    $WebPage_design_tool_insert = db_insert($WebPage_table)
+    ->fields(array(
+
+      'CommunityID' => $CommunityID,
+      'Created' => $date,
+      'CreatedBy' => $CreatedBy,
+      'IsActive' => $IsActive,
+      'Updated' => $date,
+      'UpdatedBy' => $UpdatedBy,
+      'FriendlyUrl' => $FriendlyUrl,
+    ))
+    ->execute();
+
+     //SeoData_design_tool insert
+     $seodata_design_tool_insert = db_insert($SeoData_table)
+      ->fields(array(
+        'CreatedBy' => $CreatedBy,
+        'Created' => $Created,
+        'IsActive' => $IsActive,
+        'WebPageID' => $WebPage_design_tool_insert,
+        'Version' => $Version,
+        'Title' => $Title,
+        'Description' => $Description,
+        'Canonical' => $Canonical,
+        'SeoCopyBlock' => $SeoCopyBlock,
+        'Robots' => $Robots,
+        'PageType' => $PageType,
+        'Authorship' => $Authorship,
+        'OpenGraphType' => $OpenGraphType,
+        'OpenGraphTitle' => $OpenGraphTitle,
+        'OpenGraphDescription' => $OpenGraphDescription,
+        'OpenGraphUrl' => $OpenGraphUrl,
+        'OpenGraphImage' => $OpenGraphImage,
+        'TwitterCard' => $TwitterCard,
+        'TwitterTitle' => $TwitterTitle,
+        'TwitterDescription' => $TwitterDescription,
+        'TwitterImage' => $TwitterImage,
+        'TwitterUrl' => $TwitterUrl,
+        'SchemaType' => $SchemaType,
+        'SchemaName' => $SchemaName,
+        'SchemaDescription' => $SchemaDescription,
+        'SchemaImage' => $SchemaImage,
+        'Updated' => $Updated,
+        'UpdatedBy' => $UpdatedBy,
+        'SeoCopyBlockTop' => $SeoCopyBlockTop,
+         'H1' => $H1,
+    ))
+    ->execute();
+  }
+}
+
+/**
+ * To get last seo WebPageID
+ */
+function get_last_webpage_id(){
+    $query = db_select('SeoData_design_tool', 'se');
+    $query->fields('se', array('WebPageID', 'SeoDataID'));
+    $query->orderBy("SeoDataID", "DESC");
+    $result = $query->execute()->fetchAssoc();
+    $result['WebPageID'] = $result['WebPageID'] + 1;
+    $result['SeoDataID'] = $result['SeoDataID'] + 1;
+    return $result;
+}

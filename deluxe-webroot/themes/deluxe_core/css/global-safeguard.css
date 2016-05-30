@@ -1,0 +1,12 @@
+/* Css Specific to SFG */
+.free-sample{
+	display: none;
+}
+
+.equantum-additional{
+  display: none;
+}
+
+.help-faq ol{
+  list-style-type: decimal;
+}

@@ -1,0 +1,98 @@
+.equantum-producthub h1#page-title{
+    top: 1.5em;
+}
+.equantum-producthub #region-content .region-content-inner #block-system-main,
+.page-comet-category #region-content .region-content-inner #block-system-main {
+    width: 100%;
+}
+.coment-category-content .pane-content,
+.block.equantum-bottom-part,
+#region-content .region-content-inner #block-system-main{
+    width: 1024px;
+    margin:0 auto;
+}
+.equantum-products {
+    border-bottom: 1px solid #e4e4e4;
+    margin-top: 28px;
+    overflow: hidden;
+    padding-bottom: 18px;
+}
+.equantum-products .view-content {
+    margin:0 auto;
+}
+.equantum-products tr td{
+    padding-bottom: 26px;
+}
+.equantum-bottom-link,
+.equantum-products .views-field.views-field-title {
+    margin: -20px auto 0;
+    text-align: center;
+    width: auto;
+}
+.view-equantum-category span.field-content {
+    min-width: 191px;
+}
+.equantum-bottom-link a,
+.equantum-products .views-field.views-field-title a {
+    font-size: 18px;
+    color: #333;
+    text-decoration: none;
+    background: #fff none repeat scroll 0 0;
+    border: 1px solid #e5e5e5;
+    border-radius: 5px;
+    display: inline-block;
+    line-height: 23px;
+    min-height: 37px;
+    min-width: 191px;
+    padding: 7px 12px;
+    text-align: center;
+}
+.pane-equantum-pdp .views-field-field-product-tabs .field-label{
+    display: none;
+}
+.equantum-bottom:hover .equantum-bottom-link a,
+.equantum-products tr td:hover .views-field.views-field-title a {
+    background: #def0ff;
+    color: #000;
+}
+.equantum-products .views-field-field-equantum-image img{
+    max-width: 250px;
+}
+h1.pane-title,
+.page-equantum h1#page-title {
+    background: #f5f5f5 none repeat scroll 0 0;
+    border-bottom: 1px solid #e3e3e3;
+    max-width: inherit;
+    width: 100%;
+}
+.equantum-title {
+    color: #333;
+    font-family: "Trebuchet MS",sans-serif;
+    font-size: 42px;
+    font-weight: 500;
+    letter-spacing: 0;
+    margin: auto;
+    padding: 45px 0 38px 11px;
+    text-align: left;
+    width: 1024px;
+}
+.pane-equantum-pdp .field-items a {
+    cursor: text;
+    pointer-events: none;
+    text-decoration: none;
+}
+.pane-equantum-pdp .field-items a:hover{
+    color: #333;
+}
+.equantum-mail{
+    display: none;
+}
+.upcase-first{
+    text-transform: uppercase;
+}
+.equantum-product .equantum-additional{
+  display: inline;
+}
+.equantum-producthub .field.field-name-field-snippet-image.field-type-image{
+    margin-top:0px;
+}

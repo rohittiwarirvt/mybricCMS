@@ -1,0 +1,18 @@
+.chat {
+    padding-left: 27px;
+    background-image: url(../images/chat.jpg);
+    background-repeat: no-repeat;
+    background-position: left center;
+    color: #00a0d3;
+    display: inline-block;
+    cursor: pointer;
+    margin-right: 3px;
+}
+
+.chat:hover {
+  text-decoration: underline;
+}
+.block-deluxe-user .control-panel .info-panel .chat {
+ margin: 0 3px 0 0px;
+}
+

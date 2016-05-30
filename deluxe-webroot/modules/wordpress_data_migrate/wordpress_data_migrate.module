@@ -1,0 +1,905 @@
+<?php
+
+/**
+ * Implements hook_init().
+ */
+function wordpress_data_migrate_init() {
+}
+
+/**
+ * Implements to add seo data for term.
+ */
+function wordpress_data_migrate_term_seo_data($vid) {
+
+  global $user;
+  $seo_user_name = $user->name;
+  $seo_date = date('Y-m-d h:i:s');
+  $terms = taxonomy_get_tree($vid);
+  foreach ($terms as $term) {
+    $tid = $term->tid;
+    $term_alias = drupal_get_path_alias('taxonomy/term/'. $tid);
+    $term_title = $term->name;
+    $term_desc = ($term->description!='') ? utf8_encode($term->description) : 'n/a';
+    $seo_url = 'https://www.psprint.com/'. $term_alias;
+
+   //seo data collection
+    $term_values['Title'] = $term_values['OpenGraphTitle'] = $term_values['TwitterTitle'] = $term_values['SchemaName'] = $term_values['H1'] = $term_title;
+    $term_values['Description'] = $seo_data['OpenGraphDescription'] = $term_values['TwitterDescription'] = $term_values['SchemaDescription'] = $term_values['SeoCopyBlock'] = $term_desc;
+    $term_values['Canonical']  = $term_values['OpenGraphUrl'] = $term_values['TwitterUrl'] = $seo_url . "/";
+    $term_values['FriendlyUrl'] = "/" . $term_alias;
+    $seo_data  = wordpress_data_migrate_seo_data_array($term_values);
+    
+    seo_data_insert_record($seo_data); 
+    drupal_set_message("Seo data created for term : $term_title"); 
+    watchdog('taxonomy', "Seo data created for term : $term_title", array('%tid' => $tid), WATCHDOG_NOTICE, $link = NULL);
+  } 
+} 
+
+/**
+ * Implements hook_node_update().
+ */
+function wordpress_data_migrate_node_view($node, $view_mode, $langcode) {
+  
+}
+
+/**
+ * Implements to update term for tenent.
+ */
+function wordpress_data_migrate_update_term() {
+  $terms = taxonomy_get_tree(1);
+  foreach ($terms as $term) {
+    $tid = $term->tid;
+    $term->path['pathauto'] = FALSE;
+
+    $field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_tanents'));
+    $field_collection_item->field_tanent_name['und'][0]['nid']= '24';
+    $field_collection_item->setHostEntity('taxonomy', $term);
+    $field_collection_item->save(TRUE);
+    taxonomy_term_save($term); 
+  }
+}
+
+/**
+ * Extra function: Useful to update categories URL
+ * 1 = tag 29 = Categories
+ */
+function wordpress_data_migrate_update_category_url() {
+   $result = db_select('taxonomy_term_data', 't')
+    ->fields('t', array('tid'))
+   ->condition('vid', 29)
+    ->execute()
+    ->fetchAll();
+  foreach ($result as $record) {
+      $tid = $record->tid;
+      $path = path_load("taxonomy/term/$tid");
+
+      if (array_key_exists('pid', $path) && isset($path['alias'] )) {
+        $path['alias'] = 'resources/' . $path['alias'] ."/";
+        db_update('url_alias') // Table name no longer needs {}
+              ->fields(array(
+               'alias' => $path['alias'],
+              ))
+            ->condition('pid', $path['pid'])
+            ->execute();
+      }
+  }
+}
+
+/**
+ * Extra function: Useful to update node URL(override pathauto paths)
+ * 1 = tag 29 = Categories
+ */
+function wordpress_data_migrate_update_node_url() {
+
+    $file = "sites/default/files/psprintcom_resources_post.xml";
+    header('Content-Type: text/html; charset=UTF-8');
+    $xml = simplexml_load_file($file, 'SimpleXMLElement', LIBXML_NOCDATA);
+    $array = json_decode(json_encode($xml), TRUE);
+
+    $namespaces  = $xml->channel->getNameSpaces(true);
+    $wp_children  = $xml->channel->children($namespaces['wp']);
+    $wp_base_url =  $wp_children->base_site_url;
+
+    $content_array = array();
+    foreach( $xml->channel->item as $content ) {
+      $namespaces      = $content->getNameSpaces(true);
+      $wp_children     = $content->children($namespaces['wp']);
+      $pos_id = $wp_children->post_id;
+      $url_alias = "resources/" .$wp_children->post_name ."/";
+
+      //Get node id = wordpress post id
+       $entities = new EntityFieldQuery;
+       $entities->entityCondition('entity_type', 'node')
+      ->entityCondition('bundle', 'resources')
+      ->fieldCondition('field_resources_wp_post_id','value', $pos_id, '=')
+      ->execute();
+        $results = $entities->ordered_results;
+
+        foreach($results as $res) {
+            $nid  = $res->entity_id;
+            $node = node_load($nid);
+            $alias = drupal_get_path_alias('node/' . $node->nid);
+                if($node->status == 1) {
+                 $node->pathauto_perform_alias = FALSE;
+                $node->path = array('alias' => $url_alias, 'pathauto'=>FALSE);
+                node_save($node);
+              }
+        }
+    }
+}
+
+/**
+ * Extra function: Delete all taxonomy terms from Tags and Category
+ *
+ */
+function wordpress_data_migrate_delete_all_terms() {
+  $vids = array(29, 1);
+   foreach($vids as $vid) {
+      $tree = taxonomy_get_tree($vid);
+      foreach($tree as $key => $val){
+        taxonomy_term_delete($val->tid);
+      }
+  }
+}
+
+/**
+ * Extra function: Update content author
+ *
+ */
+function wordpress_data_migrate_update_content_author() {
+    $query = db_select('node', 'n');
+    $query->fields('n',array('nid'));
+    $db_or = db_or();
+    $db_or->condition('n.type', 'resources', '=');
+    $query->condition($db_or);
+    $result = $query->execute()->fetchAll();
+
+    foreach($result as $res) {
+       $nid = $res->nid;
+       $node = node_load($nid);
+       if($node->type == 'resources')
+           $author = $node->field_resources_author['und'][0]['value'];
+       $author_id  = wordpress_data_migrate_get_user_by_name($author);
+       if($author_id != '')
+           $uid = $author_id;
+       else
+            $uid = 1;
+       $node->uid = $uid;
+       node_save($node);
+    }
+}
+
+/**
+ * Function to get user by name
+*/
+function wordpress_data_migrate_get_user_by_name($name){
+   $user = db_select('users', 'u')
+    ->fields('u', array('uid'))
+    ->condition('u.name', $name, '=')
+    ->execute()
+    ->fetchAssoc();
+
+    if($user['uid'])
+      return $user['uid'];
+}
+
+/**
+ * Extra Function: To replace URL if content exists any wrong URL
+*/
+function wordpress_data_migrate_repalce_url(){
+
+   $result= db_query("SELECT nid FROM {node} AS n WHERE n.type = 'resources'");
+       $i = 0;
+      foreach ($result as $record) {
+        $node = node_load($record->nid);
+        $body = $node->body['und'][0]['value'];
+        $src = "sites/default/files/resources/";
+        $dest = "/sites/default/files/resources";
+        $newbody = str_replace($src, $dest, $body);
+        $node->body[$node->language][0]['value'] = $newbody;
+        node_save($node);
+        $i++;
+      }
+}
+
+/**
+ * hook_form_alter
+*/
+function wordpress_data_migrate_form_alter(&$form, &$form_state, $form_id) {
+  if (isset($form['path']) && $form['#node_edit_form']) {
+    $path_value = $form['path']['alias']['#default_value'];
+    $nid = $form['nid']['#value'];
+    $stored_path_alias = drupal_get_path_alias("node/$nid");
+    if(substr($stored_path_alias , strlen($path_value) ) == "/") {
+      $form['path']['alias']['#default_value'] = $stored_path_alias;
+    }
+  }
+}
+
+/**
+ * Implements hook_menu().
+ */
+function wordpress_data_migrate_menu() {
+
+ $items = array();
+
+ $items['admin/config/wordpress/migrate'] = array(
+    'title' => 'Wordpress Data Migrate',
+    'description' => 'This is the parent item',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('wordpress_data_migrate_form'),
+    'access arguments' => array('administer site configuration'),
+     'type' => MENU_LOCAL_TASK,
+     'weight' => 2,
+     'file' => 'wordpress_data_migrate.admin.inc',
+  );
+
+  $items['admin/config/update/data/%'] = array(
+    'title' => 'Update Resources Data',
+    'description' => 'This is the parent item',
+    'page callback' => 'wordpress_data_migrate_update_script',
+    'page arguments' => array(4,5),
+    'access arguments' => array('administer site configuration'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  return $items;
+}
+
+function wordpress_data_migrate_update_script($action, $objid) {
+
+  $message = "<b>Taxonomy SEO:</b>seo-data-taxonomy";
+  switch ($action) {
+    case 'seo-data-taxonomy':
+        $message .= "<br />Tags: 1";
+        $message .= "<br />Categories:29";
+        if(is_numeric($objid)){
+          wordpress_data_migrate_term_seo_data($objid);
+        }
+    break;
+    
+    default:
+    // add your text here;
+        
+  }
+  return $message;
+}
+
+/**
+ * Implements hook_form_submit().
+ */
+function wordpress_data_migrate_form_submit($form, &$form_state) {
+
+  $uri = $form['wordpress_data_migrate']['wordpress_data_file']['#file']->uri;
+  $wrapper = file_stream_wrapper_get_instance_by_uri($uri);
+  $path = $wrapper->getDirectoryPath() . "/" . file_uri_target($uri);
+
+  $upload_in = $form['wordpress_data_migrate']['wordpress_data_uploadin']['#value'] ;
+  drupal_chmod($form['wordpress_data_migrate']['wordpress_data_file']['#file']->uri, 0777);
+
+  if($path!='' && $upload_in!='') {
+      $value_array = explode('.', $upload_in);
+
+      if (in_array("taxonomy", $value_array)) {
+           wordpress_data_migrate_import_taxonomy($path, $value_array);
+      }
+      elseif (in_array("content_type", $value_array)) {
+           wordpress_data_migrate_import_content($path, $value_array);
+      }
+      elseif(in_array("featured_image", $value_array)){
+          wordpress_data_migrate_update_featured_image($path, $value_array);
+      }
+      elseif(in_array("user", $value_array)){
+           wordpress_data_migrate_import_user($path);
+      }
+      elseif(in_array("url_redirect", $value_array)){
+           wordpress_data_migrate_import_redirect_url($path, $value_array);
+      }
+  }
+}
+
+/**
+ * Function to import URL redirection within site
+ * Module - redirect
+ */
+ function wordpress_data_migrate_import_redirect_url($file){
+
+  module_load_include('php', 'wordpress_data_migrate', 'XLSReader/reader');
+  $excel = new Spreadsheet_Excel_Reader();
+  $excel->setOutputEncoding('UTF-8');
+  $excel->read($file);
+  $x=2;
+  while($x<=$excel->sheets[0]['numRows']) {
+      $src_url = isset($excel->sheets[0]['cells'][$x][1]) ? $excel->sheets[0]['cells'][$x][1] : '';
+      $dest_url = isset($excel->sheets[0]['cells'][$x][2]) ? $excel->sheets[0]['cells'][$x][2] : '';
+      $src_url = rtrim(ltrim($src_url, '/'), '/');
+      $dest_url = rtrim(ltrim($dest_url, '/'), '/');
+
+      if($src_url!= $dest_url) {
+
+          $redirect = new stdClass();
+          $redirect->source = (string) $src_url;           // From URL
+          $redirect->source_options = array();
+          $redirect->redirect = (string) $dest_url;        // To URL
+          $redirect->redirect_options = array();
+          $redirect->status_code = 0;                      // Redirect Status, 0 is default
+          $redirect->type = 'redirect';
+          $redirect->language = LANGUAGE_NONE;
+
+          //If duuplicate then delete old one n create new
+          if(redirect_load_by_source($src_url)) {
+                 $redirect = redirect_load_by_source($src_url);
+                 redirect_delete_by_path($src_url);
+          }
+          redirect_save($redirect);
+          drupal_set_message($dest_url . ' URL redirect added.');
+      }
+    $x++;
+  }
+}
+
+/**
+ * Function to import user
+*/
+function wordpress_data_migrate_import_user($file) {
+
+  module_load_include('php', 'wordpress_data_migrate', 'XLSReader/reader');
+  $excel = new Spreadsheet_Excel_Reader();
+  $excel->setOutputEncoding('UTF-8');
+  $excel->read($file);
+  $x=2;
+  while($x<=$excel->sheets[0]['numRows']) {
+
+   $id = isset($excel->sheets[0]['cells'][$x][1]) ? $excel->sheets[0]['cells'][$x][1] : '';
+   $login_name = isset($excel->sheets[0]['cells'][$x][2]) ? $excel->sheets[0]['cells'][$x][2] : '';
+   $nicename = isset($excel->sheets[0]['cells'][$x][3]) ? $excel->sheets[0]['cells'][$x][3] : '';
+   $email =isset($excel->sheets[0]['cells'][$x][4]) ? $excel->sheets[0]['cells'][$x][4] : '';
+   $url= isset($excel->sheets[0]['cells'][$x][5]) ? $excel->sheets[0]['cells'][$x][5] : '';
+   $created_on = isset($excel->sheets[0]['cells'][$x][6]) ? $excel->sheets[0]['cells'][$x][6] : '';
+   $status = isset($excel->sheets[0]['cells'][$x][7]) ? $excel->sheets[0]['cells'][$x][7] : '';
+   $display_name = isset($excel->sheets[0]['cells'][$x][8]) ? $excel->sheets[0]['cells'][$x][8] : '';
+   $role = isset($excel->sheets[0]['cells'][$x][9]) ? $excel->sheets[0]['cells'][$x][9] : '';
+   $group = isset($excel->sheets[0]['cells'][$x][10]) ? $excel->sheets[0]['cells'][$x][10] : '';
+   $desc = isset($excel->sheets[0]['cells'][$x][11]) ? $excel->sheets[0]['cells'][$x][11] : '';
+   $first_name = isset($excel->sheets[0]['cells'][$x][12]) ? $excel->sheets[0]['cells'][$x][12] : '';
+   $last_name = isset($excel->sheets[0]['cells'][$x][13]) ? $excel->sheets[0]['cells'][$x][13] : '';
+
+   $random_password = mt_rand(100000, 999999);
+   if (in_array(trim($role), user_roles()))
+    $role_value = array_search(trim($role), user_roles());
+
+   //create user
+   $new_user = array(
+      'name' => $login_name,
+      'mail' => $email,
+      'pass' => $random_password,
+      'status' => 1,
+      'field_user_first_name' => array(LANGUAGE_NONE => array(array('value' => $first_name))),
+      'field_user_last_name' => array(LANGUAGE_NONE => array(array('value' => $last_name))),
+      'field_user_nicename' => array(LANGUAGE_NONE => array(array('value' => $nicename))),
+      'field_user_description' => array(LANGUAGE_NONE => array(array('value' => $desc))),
+      'field_user_wordpress_id' => array(LANGUAGE_NONE => array(array('value' => $id))),
+      'access' => REQUEST_TIME,
+      'roles' => array($role_value => $role_value),
+  );
+  user_save(NULL, $new_user);
+  drupal_set_message($login_name . ' user added.');
+  $x++;
+  }
+}
+
+/**
+ * Function to import taxonomy
+ * Categories and tag
+*/
+function wordpress_data_migrate_import_taxonomy($file, $array) {
+
+    $vocabulary = $array[1];
+    $vid = $array[2];
+
+    $xml = simplexml_load_file($file, 'SimpleXMLElement', LIBXML_NOCDATA);
+    $namespaces      = $xml->channel->getNameSpaces(true);
+    $wp_children     = $xml->channel->children($namespaces['wp']);
+    $taxonomy_data = json_decode(json_encode($wp_children), TRUE);
+    $terms = array();  $i = 0;
+
+    if($vocabulary == 'tags') {
+        foreach( $taxonomy_data['tag'] as $tag ) {
+            $terms[$i]['term_name'] = html_entity_decode($tag['tag_name']);
+            $terms[$i]['term_path'] = "tag/".$tag['tag_slug'];
+            $terms[$i]['parent_term'] = array();
+            $i++;
+        }
+    }
+    else {
+        //for categories
+        foreach( $taxonomy_data['category'] as $category ) {
+            $terms[$i]['term_name'] = html_entity_decode($category['cat_name']);
+            $terms[$i]['term_path'] = html_entity_decode($category['category_nicename']);
+            $terms[$i]['term_desc'] = html_entity_decode($category['category_description']);
+            $terms[$i]['parent_term'] = $category['category_parent'];
+            $i++;
+        }
+    }
+    wordpress_data_migrate_insert_taxonomy($terms, $array);
+}
+
+/**
+ * Function to inset taxonomy term in DB
+ */
+function wordpress_data_migrate_insert_taxonomy($taxonomy, $array) {
+
+  $vocabulary = $array[1];
+  $vid = $array[2];
+
+  foreach($taxonomy as $data) {
+    $name = $data['term_name'];
+    $url_alias = $data['term_path'];
+    $parent = $data['parent_term'];
+    $desc = $data['term_desc'];
+    if((is_array($parent) && empty($parent)) )
+          $parent_id=0;
+    else{
+         $path = drupal_lookup_path('source', $parent);
+         $pieces = explode("/", $path);
+         $parent_id = $pieces[2];
+         $url_alias = $parent ."/" .$url_alias;
+    }
+    $term = new stdClass();
+    $term->name = $name ;
+    $term->vid = $vid;  //Vocabulary ID
+    $term->description = $desc;
+    $term->parent = $parent_id;
+    $term->path['pathauto'] = FALSE;
+    $term->path['alias'] = $url_alias;
+    taxonomy_term_save($term);
+    drupal_set_message($name . ' term added.');
+    watchdog('taxonomy', "$name  term added.", array('%termid' => $vid), WATCHDOG_NOTICE, $link = NULL);
+  }
+}
+
+/**
+ * Function to import content
+ * Resources, articles
+ */
+function wordpress_data_migrate_import_content($file, $array) {
+
+   $content_type = $array[1];
+   header('Content-Type: text/html; charset=UTF-8');
+   $xml = simplexml_load_file($file, 'SimpleXMLElement', LIBXML_NOCDATA);
+   $array = json_decode(json_encode($xml), TRUE);
+
+   $namespaces  = $xml->channel->getNameSpaces(true);
+   $wp_children  = $xml->channel->children($namespaces['wp']);
+   $wp_base_url =  $wp_children->base_site_url;
+
+   $content_array = array();
+    $i=0;
+   //each post is represented by an item/node, so loop through each one
+   foreach( $xml->channel->item as $content ) {
+
+      $content_array['base_url'] = (string) $wp_base_url;
+      $content_array['title'] = (string) $content->title;
+      $content_array['link']  = (string) $content->link;
+      $content_array['pub_date']  = (string) $content->pubDate;
+
+      $namespaces      = $content->getNameSpaces(true);
+      $wp_children     = $content->children($namespaces['wp']);
+
+      $content_array['creator']  = $content->children($namespaces['dc']);
+      $text = ($content->children($namespaces['content']));
+      $bodytext = array();
+      $bodytext = json_decode(json_encode($text), TRUE);
+      $content_array['body'] =  $bodytext['encoded'];
+
+      $content_array['post_id']  = (string) $wp_children->post_id;
+      $content_array['post_date']  = (string) $wp_children->post_date;
+      $content_array['status']  = $wp_children->status;
+      $content_array['post_name']  = $wp_children->post_name;
+      $content_array['type']  = $wp_children->post_type;
+      $content_array['postmeta'] = json_decode(json_encode($wp_children->postmeta), TRUE);
+
+       $catindex = 0; $categories = array();
+       foreach ($content->category as $name => $value) {
+              $attributes = $value->attributes();
+              $categories[$catindex]['value'] = (string)$value;
+              $categories[$catindex]['nicename'] = (string)$attributes['nicename'];
+              $categories[$catindex]['domain'] = (string) $attributes['domain'];
+              $catindex++;
+       }
+       $content_array['categories']  = $categories;
+
+       //read all meta values
+       $metaindex = 0; $seodata = array();
+       foreach ( $wp_children->postmeta as $wp_meta ) {
+          $seodata[$metaindex]['metakey'] = (string)$wp_meta->meta_key;
+          $seodata[$metaindex]['metavalue'] = (string)$wp_meta->meta_value;
+          $metaindex++;
+        }
+        $content_array['seodata']  = $seodata;
+
+        wordpress_data_migrate_create_node($content_array, $content_type);
+      $i++;
+    }
+}
+
+/**
+ * Function to import feature image
+ */
+function wordpress_data_migrate_update_featured_image($file, $array) {
+
+  global $base_url; 
+  module_load_include('php', 'wordpress_data_migrate', 'XLSReader/reader');
+  $excel = new Spreadsheet_Excel_Reader();
+  $excel->setOutputEncoding('UTF-8');
+  $excel->read($file);
+  $x=2;
+  while($x<=$excel->sheets[0]['numRows']) {
+   $post_id = isset($excel->sheets[0]['cells'][$x][1]) ? $excel->sheets[0]['cells'][$x][1] : '';
+   $image_url = isset($excel->sheets[0]['cells'][$x][2]) ? $excel->sheets[0]['cells'][$x][2] : '';
+
+   //Get node id = wordpress post id
+   $entities = new EntityFieldQuery;
+   $entities->entityCondition('entity_type', 'node')
+  ->entityCondition('bundle', 'resources')
+  ->fieldCondition('field_resources_wp_post_id','value', $post_id, '=')
+  ->execute();
+
+   $results = $entities->ordered_results;
+   $nid = isset($results[0]->entity_id) ? $results[0]->entity_id : 0;
+   $node = node_load($nid);
+   $title = $node->title;
+
+    if(!isset($node->field_thumbnail_image['und'][0]['fid']) && $image_url!='none') {
+      $image = explode('uploads/', $image_url);
+      $file_uri =  file_build_uri("resources/".$image[1]);
+      $image_url = str_replace('http://www.wp_resources.local/wp-content/uploads', $base_url."/sites/default/files/resources", $image_url);
+      $relative_url = parse_url(file_create_url($file_uri));
+      $seo_image = isset($relative_url) ? $relative_url['path'] : 'n/a';
+
+      $file_temp = file_get_contents($image_url);
+      $file_temp = file_save_data($file_temp, $file_uri, FILE_EXISTS_RENAME);
+      $file_info  = array(
+            'fid' => $file_temp->fid,
+            'filename' => $file_temp->filename,
+            'filemime' => $file_temp->filemime,
+            'uid' => 1,
+            'uri' => $file_temp->uri,
+            'status' => 1,
+            'display' => 1,
+            'alt' => $title,
+            'title'=> $title,
+      );
+      $node->field_thumbnail_image = array(
+        'und' => array(
+          0 => $file_info
+        )
+      );
+      $alias = drupal_get_path_alias('node/' . $nid);
+      $node->pathauto_perform_alias = FALSE;
+      $node->path = array('alias' => $alias, 'pathauto'=>FALSE);
+      node_save($node); 
+       
+      // Update SEO image
+      $sql = "UPDATE SeoData_design_tool as se 
+      left join WebPage_design_tool as wb on se.WebPageID = wb.WebPageID
+      set se.OpenGraphImage = :type1, se.TwitterImage  =:type1, se.SchemaImage  =:type1
+      where wb.CommunityID = :type2 and wb.FriendlyUrl = :type3";
+      $args = array(':type1' => $seo_image, ':type2' => 1, ':type3' => "/". $alias );
+      db_query($sql, $args); 
+
+      drupal_set_message("Node $title has been updated for featured image.");
+      watchdog('node', "Node $title has been updated for featured image.", array('%nid' => $node->nid), WATCHDOG_NOTICE, $link = NULL);
+    }
+    $x++;
+  } 
+}
+
+/**
+ * Function to create node programtically with fields value
+ */
+function wordpress_data_migrate_create_node($content, $type){
+
+   global $base_url;
+   $images_url_array = array();
+
+   $psprint_url = 'http://www.psprint.com/resources';
+   $images_url_array[] = "http://www.psprint.com/resources/wp-content/uploads";
+   $images_url_array[] = 'http://66.175.41.243/resources/wp-content/uploads';
+
+   $psprint_base_url = $content['base_url']. "/";
+
+   if (strpos($base_url,'/resources') !== false)
+       $local_image_url = '/resources/sites/default/files/resources';
+   else
+       $local_image_url = '/sites/default/files/resources';
+
+   $title = $content['title'];
+   $path = rtrim(str_replace($psprint_base_url, '', $content['link']), "/");
+   $url_alias = "resources/" .$content['post_name'];
+   $body = (string) $content['body'];
+   $author = $content['creator'];
+   $post_id  = $content['post_id'];
+   $status = ($content['status']=="publish") ? 1 :0;
+   $created_date = (string) $content['post_date'];
+   $categories = $content['categories'];
+   $seodata = $content['seodata'];
+
+   $category_flag = $tag_flag = $image_flag = false;
+
+   if(!empty($categories))
+      foreach($categories as $category) {
+          $terms = taxonomy_get_term_by_name(htmlspecialchars_decode($category['value']));
+          $termids = array_keys($terms);
+          foreach ($termids as $tid) {
+              $term_url = drupal_get_path_alias('taxonomy/term/' . $tid);
+              $term = taxonomy_term_load($tid);
+              $voc_id = $term->vid;
+              $term_alias = explode('/', $term_url);
+              $term_alias = ($term_alias[1]=="") ? $term_alias[0] :$term_alias[1];
+
+              if($term_alias == $category['nicename'] && (in_array($voc_id, array(1, 29)))) {
+                  if($category['domain'] == 'post_tag' ) {
+                      $tag_flag = true;
+                      $tag_ids[]['tid'] = $tid;
+                  }
+                  if($category['domain'] == 'category') {
+                      $category_flag = true;
+                      $category_ids[]['tid']  = $tid;
+                  }
+              }
+          }
+      }
+      //get seo data
+      $seodesc = $yoastfocus =  $seotitle = $seo_all_keywords = ''; $seo_all_keywords = array();
+      $seotitle =  $title;
+      foreach($seodata as $seo) {
+          $seokey = $seo['metakey'];
+          $seovalue = $seo['metavalue'];
+          if($seokey == '_yoast_wpseo_metadesc')
+              $seodesc = $seovalue;
+          if($seokey == '_yoast_wpseo_focuskw')
+              $yoastfocus = $seovalue;
+          if($seokey == '_yoast_wpseo_title')
+              $seotitle =  $seovalue ;
+
+          $seo_all_keywords[] =  $seokey;
+      }
+      //image pattern: <a href,
+      if(startsWith($body, "<a href")){
+         $image_link = (substr($body, 0, mb_strpos($body, '</a>')+4));
+         $pos = intval(strpos($image_link, "<img"));
+       }
+      elseif(startsWith($body, "<img")){
+         $image_link = (substr($body, 0, mb_strpos($body, '/>')+2));
+         $pos = 0;
+      }
+      else
+       $pos = -1;
+
+      if($pos >= 0) {
+          $doc = new DOMDocument();
+          @$doc->loadHTML($image_link);
+          $imageTags = $doc->getElementsByTagName('img');
+
+          foreach($imageTags as $tag) {
+             $imgsrc =  $tag->getAttribute('src');
+             if(startsWith($imgsrc, 'data:image/jpeg;base64')){
+                $body =  str_replace($imgsrc, '',$body);
+              }
+              $imgalt =  $tag->getAttribute('alt');
+              $imgtitle = $tag->getAttribute('title');
+              $imgwidth = $tag->getAttribute('width');
+          }
+          if($imgwidth > 530) {
+             $image_flag = true;
+             $image_name_array =  explode('.',basename($imgsrc));
+             $image_name = $image_name_array[0]. "_".REQUEST_TIME .".".  $image_name_array[1];
+              $body  = str_replace($image_link, '', $body);
+          }
+      }
+      //replace image paths
+      $body = str_replace($images_url_array, $local_image_url, $body);
+
+      //repalce local link path
+      $dom = new DOMDocument;
+      @$dom->loadHTML($body);
+      $xpath = new DOMXPath($dom);
+      $nodes = $xpath->query('//a/@href');
+      foreach($nodes as $href) {
+          $local_link  = $href->nodeValue;
+          if(startsWith($local_link, "/resources")) {
+              $body = str_replace("/resources/", '', $body);
+          }
+          //replace path for redirection rules
+          if(startsWith($local_link, $psprint_url) && endsWith($local_link, '.asp')) {
+              $redirection_link_array = array();
+              $redirection_link_array= explode(".", basename($local_link));
+              $redirection_link = $redirection_link_array[0];
+              $body = str_replace($local_link, $redirection_link, $body);
+          }
+      }
+      //remove style tag
+      $body = preg_replace("/<style\\b[^>]*>(.*?)<\\/style>/s", "", $body);
+
+      if($seodesc!== '')
+        $bodysummary = $seodesc;
+      else
+        $bodysummary = text_summary($body);
+
+      // Saves a file to the specified destination and creates a database entry.
+      $node = new StdClass();
+      $node->type = $type;
+      $node->language = LANGUAGE_NONE ;
+      $node->title = (string)$title;
+      $node->body['und'][0]['value'] = (string)$body;
+      $node->body['und'][0]['summary'] = (string) $bodysummary;
+      $node->body['und'][0]['format'] = 'full_html';
+
+      if($category_flag == true){
+       $node->field_resources_category['und'] = $category_ids;
+      }
+      if($tag_flag == true){
+       $node->field_resources_tag['und'] = $tag_ids;
+      }
+
+      //If image has been set at top
+      if($image_flag == true) {
+          $image = explode('uploads/', $imgsrc);
+          $file_uri =  file_build_uri("resources/".$image[1]);
+
+          $file_temp = file_get_contents($imgsrc);
+          $file_temp = file_save_data($file_temp, $file_uri, FILE_EXISTS_RENAME);
+          $file_info  = array(
+                'fid' => $file_temp->fid,
+                'filename' => $file_temp->filename,
+                'filemime' => $file_temp->filemime,
+                'uid' => 1,
+                'uri' => $file_temp->uri,
+                'status' => 1,
+                'display' => 1,
+                'alt' => $imgalt,
+                'title'=> $imgtitle,
+          );
+          $node->field_banner = array(
+            'und' => array(
+              0 => $file_info
+            )
+          );
+       }
+      $node->field_resources_author['und'][0]['value'] = $author;
+      $node->field_resources_wp_post_id['und'][0]['value'] = $post_id;
+      $author_id = wordpress_data_migrate_get_user_by_name($author);
+      if($author_id != '')
+         $uid = $author_id;
+       else
+          $uid = 1;
+
+      $node->uid = $uid;
+      $node->status = $status;
+      $node->active = 1;
+      $node->promote = 0;
+      $node->created = strtotime($created_date);
+      $node->path = array('alias' => $url_alias, 'pathauto'=>0);
+
+      //node tanent
+      $field_collection_item = entity_create('field_collection_item', array('field_name' => 'field_tanents'));
+      $field_collection_item->field_tanent_name['und'][0]['nid']= '24';
+      $field_collection_item->setHostEntity('node', $node);
+      $field_collection_item->save(TRUE);
+
+      //Seo data collection
+      $seo_url = 'https://www.psprint.com/'. $url_alias;
+      $OpenGraphImage = isset($file_uri) ? str_replace($base_url, 'https://www.psprint.com/resources', file_create_url($file_uri)) : 'n/a';
+
+      global $user;
+      $seo_user_name = $user->name;
+      $seo_date = date('Y-m-d h:i:s');
+      $seo_status = 0;
+      if($content['status']== 'draft')
+        $seo_status = 3;
+      if($content['status']== 'publish')
+        $seo_status = 1;
+      if($content['status']== 'pending')
+        $seo_status = 2;
+
+      $node_values = array();
+      $node_values['Title'] = $node_values['OpenGraphTitle'] = $node_values['TwitterTitle'] = $node_values['SchemaName'] = $seotitle;
+      $node_values['Description'] = $node_values['OpenGraphDescription'] = $node_values['TwitterDescription'] =$node_values['SchemaDescription'] = $seodesc;
+      $node_values['Canonical'] = $node_values['OpenGraphUrl'] =  $node_values['TwitterUrl'] = $seo_url;
+      $node_values['SeoCopyBlock'] = $body;
+      $node_values['Authorship'] = $author;
+      $node_values['OpenGraphImage'] = $node_values['TwitterImage'] =  $node_values['SchemaImage'] = $OpenGraphImage;
+      $node_values['H1'] = $title;
+      $node_values['FriendlyUrl'] = "/" . $url_alias;
+
+      $seo_data  = wordpress_data_migrate_seo_data_array($node_values); 
+
+      // Check if node alredy created
+      $node_exists = check_node_exists($url_alias);
+      if($node_exists == FALSE) {
+          seo_data_insert_record($seo_data);
+          node_save($node);
+          $msg = "has been created.";
+      }
+      else {
+          $msg = "has already exists.";
+      }
+      drupal_set_message("Node $title $msg.");
+      watchdog('node', "Node $title $msg.", array('%nid' => $node->nid), WATCHDOG_NOTICE, $link = NULL);
+}
+
+/**
+ * Function to search string at start position
+ */
+function startsWith($haystack, $needle) {
+      return preg_match('/^' . preg_quote($needle, '/') . '/', $haystack);
+}
+
+/**
+ * Function to search string at last position
+ */
+function endsWith($haystack, $needle) {
+    return $needle === "" || (($temp = strlen($haystack) - strlen($needle)) >= 0 && strpos($haystack, $needle, $temp) !== FALSE);
+}
+
+/**
+ * Function to check if node is exists or not
+ */
+function check_node_exists($alias){
+  $query = db_select('url_alias', 'ua');
+  $query->fields('ua', array('alias'));
+  $query->condition('alias', $alias, '=');
+  $result = $query->execute()->fetchAssoc();
+  $path  = $result['alias'];
+
+  if($path)
+    return TRUE;
+  else
+    return FALSE;
+}
+
+/* 
+ * Function to ceate common array for seo data with default values.
+ * 
+*/
+function wordpress_data_migrate_seo_data_array($values) {
+  global $user;
+  $seo_user_name = $user->name;
+  $seo_date = date('Y-m-d h:i:s');
+
+  $seo_data = array();
+  $seo_data['Title'] = isset($values['Title']) ? $values['Title'] : 'n/a';
+  $seo_data['Description'] = isset($values['Description']) ? utf8_encode($values['Description']) : 'n/a';
+  $seo_data['Canonical'] = isset($values['Canonical']) ? t($values['Canonical']) : 'n/a';
+  $seo_data['SeoCopyBlock'] = isset($values['SeoCopyBlock']) ? utf8_encode($values['SeoCopyBlock']) : 'n/a';
+  $seo_data['Robots'] = isset($values['Robots']) ? $values['Robots'] : 'n/a';
+  $seo_data['PageType'] = isset($values['PageType']) ? $values['PageType'] : 'ResourcePage';
+  $seo_data['Authorship'] = isset($values['Authorship']) ? $values['Authorship'] : 'n/a';
+  $seo_data['OpenGraphType'] = isset($values['OpenGraphType']) ? $values['OpenGraphType'] : 'website';
+  $seo_data['OpenGraphTitle'] = isset($values['OpenGraphTitle']) ? $values['OpenGraphTitle'] : 'n/a';
+  $seo_data['OpenGraphDescription'] = isset($values['OpenGraphDescription']) ? utf8_encode($values['OpenGraphDescription']) : 'n/a';
+  $seo_data['OpenGraphUrl'] = isset($values['OpenGraphUrl']) ? $values['OpenGraphUrl'] : 'n/a';
+  $seo_data['OpenGraphImage'] = isset($values['SeoDataID']) ? $values['SeoDataID'] : 'n/a';
+  $seo_data['TwitterCard'] = isset($values['TwitterCard']) ? $values['TwitterCard'] : 'summary';
+  $seo_data['TwitterTitle'] = isset($values['TwitterTitle']) ? $values['TwitterTitle'] : 'n/a';
+  $seo_data['TwitterDescription'] =  isset($values['TwitterDescription']) ? utf8_encode($values['TwitterDescription']) : 'n/a';
+  $seo_data['TwitterImage'] = isset($values['TwitterImage']) ? $values['TwitterImage'] : 'n/a';
+  $seo_data['TwitterUrl'] = isset($values['TwitterUrl']) ? $values['TwitterUrl'] : 'n/a';
+  $seo_data['SchemaType'] = isset($values['SchemaType']) ? $values['SchemaType'] : 'https://schema.org/Article';
+  $seo_data['SchemaName'] = isset($values['SchemaName']) ? $values['SchemaName'] : 'n/a';
+  $seo_data['SchemaDescription'] = isset($values['SchemaDescription']) ? utf8_encode($values['SchemaDescription']) : 'n/a';
+  $seo_data['SchemaImage'] = isset($values['SchemaImage']) ? $values['SchemaImage'] : 'n/a';
+  $seo_data['SeoCopyBlockTop'] = isset($values['SeoCopyBlockTop']) ? $values['SeoCopyBlockTop'] : 'n/a';
+  $seo_data['H1'] = isset($values['H1']) ? $values['H1'] : 'n/a';
+  $seo_data['CreatedBy'] = $seo_user_name;
+  $seo_data['Created'] = $seo_date;
+  $seo_data['IsActive'] = isset($values['IsActive']) ? $values['IsActive'] : 1;
+  $seo_data['Updated'] = $seo_date;
+  $seo_data['Version'] = isset($values['Version']) ? $values['Version'] : 1;
+  $seo_data['UpdatedBy'] = $seo_user_name;
+  $seo_data['CommunityID'] = 1;
+  $seo_data['FriendlyUrl'] = isset($values['FriendlyUrl']) ? $values['FriendlyUrl'] : 'n/a';
+
+  return $seo_data;
+}
